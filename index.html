@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Chat Lite</title>
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzA5MDkwYiIvPjxyZWN0IHg9IjQiIHk9IjgiIHdpZHRoPSIyNCIgaGVpZ2h0PSIxNiIgcng9IjQiIGZpbGw9IiMxZTI5M2IiIHN0cm9rZT0iIzNiODJmNiIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48Y2lyY2xlIGN4PSIxMSIgY3k9IjE2IiByPSIyIiBmaWxsPSIjM2I4MmY2Ii8+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMiIgZmlsbD0iIzNiODJmNiIvPjxjaXJjbGUgY3g9IjIxIiBjeT0iMTYiIHI9IjIiIGZpbGw9IiMzYjgyZjYiLz48L3N2Zz4=">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/editor/editor.main.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #09090b;
+  --surface: #18181b;
+  --surface-2: #1e1e22;
+  --surface-3: #27272a;
+  --border: #27272a;
+  --text: #fafafa;
+  --text-2: #a1a1aa;
+  --text-3: #52525b;
+  --accent: #3b82f6;
+  --accent-dim: #2563eb;
+  --danger: #ef4444;
+  --radius: 10px;
+  --font: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', 'Menlo', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+body { overflow: hidden; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; border: none; background: none; }
+
+.sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0;
+  width: 260px; background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  z-index: 100;
+  transform: translateX(-100%);
+  transition: transform .2s ease;
+}
+.sidebar.open { transform: translateX(0); }
+
+.sb-head {
+  padding: 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.sb-head h3 { font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+
+.sb-body { flex: 1; overflow-y: auto; padding: 8px; }
+.sb-body::-webkit-scrollbar { width: 3px; }
+.sb-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.sb-foot { padding: 12px; border-top: 1px solid var(--border); }
+
+.conv-item {
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px;
+  margin-bottom: 2px; transition: background .1s;
+}
+.conv-item:hover { background: var(--surface-2); }
+.conv-item.active { background: #172554; }
+.conv-item .title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-item .meta { font-size: 11px; color: var(--text-3); display: flex; justify-content: space-between; }
+.conv-item .actions { display: none; gap: 4px; margin-top: 4px; }
+.conv-item:hover .actions { display: flex; }
+.conv-item .actions button {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border);
+}
+.conv-item .actions button:hover { background: var(--border); color: var(--text); }
+.conv-item .actions button.del:hover { background: #2a1215; color: var(--danger); border-color: #3a1a1e; }
+
+.btn-full {
+  width: 100%; padding: 8px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-2); font-size: 13px; transition: all .1s;
+}
+.btn-full:hover { background: var(--surface-3); color: var(--text); }
+
+.fab {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  font-size: 15px;
+  color: var(--text-3);
+  background: rgba(24,24,27,.75);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255,255,255,.05);
+  transition: background .12s, color .12s;
+}
+.fab:hover { background: rgba(39,39,42,.85); color: var(--text-2); }
+
+.fab-menu {
+  position: fixed; top: 12px; left: 12px;
+  z-index: 50;
+}
+
+.fab-group {
+  position: fixed; top: 12px; right: 12px;
+  display: flex; gap: 4px;
+  z-index: 50;
+}
+
+.status-pill {
+  position: fixed; top: 54px; left: 12px;
+  max-width: min(320px, calc(100% - 140px));
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(24,24,27,.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 11px; color: var(--text-3);
+  z-index: 50;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.messages {
+  position: fixed; inset: 0;
+  overflow-y: auto;
+  padding: 68px 12px 156px;
+}
+.messages::-webkit-scrollbar { width: 5px; }
+.messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.msg-stack {
+  width: min(760px, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; gap: 24px;
+}
+
+.empty {
+  min-height: 60vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+}
+.empty h2 { font-size: 18px; font-weight: 600; }
+.empty p { font-size: 13px; color: var(--text-3); text-align: center; max-width: 320px; line-height: 1.7; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+.chip {
+  padding: 7px 14px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-2); font-size: 13px; transition: all .1s;
+}
+.chip:hover { background: var(--surface-2); color: var(--text); }
+
+.msg { display: flex; flex-direction: column; gap: 6px; }
+.msg-hd { display: flex; align-items: center; gap: 8px; }
+.msg-av {
+  width: 20px; height: 20px; border-radius: 5px;
+  display: grid; place-items: center;
+  font-size: 9px; font-weight: 700;
+}
+.msg.user .msg-av { background: #172554; color: #60a5fa; }
+.msg.assistant .msg-av { background: var(--surface-2); color: var(--text-3); }
+.msg-nm { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.msg-tm { font-size: 11px; color: var(--text-3); margin-left: auto; }
+.msg-pf { font-size: 11px; color: #3f6f3f; margin-left: 6px; }
+
+.msg-bd {
+  padding: 10px 14px; border-radius: 10px;
+  line-height: 1.75; word-break: break-word;
+}
+.msg.user .msg-bd { background: var(--surface); border: 1px solid var(--border); }
+.msg.assistant .msg-bd { background: none; padding-left: 28px; }
+.msg.error .msg-bd { background: #1c1113; border: 1px solid #2a1518; color: #d4a0a0; }
+
+.typing { display: flex; gap: 5px; align-items: center; padding-left: 28px; }
+.typing span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text-3); animation: blink 1.2s infinite;
+}
+.typing span:nth-child(2) { animation-delay: .15s; }
+.typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
+
+.composer {
+  position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+  width: min(800px, calc(100% - 24px));
+  z-index: 50;
+  background: rgba(18,18,21,.82);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: opacity .2s ease, transform .2s ease, visibility .2s;
+}
+.composer.hidden {
+  opacity: 0; transform: translateX(-50%) translateY(8px);
+  visibility: hidden; pointer-events: none;
+}
+
+.composer textarea {
+  width: 100%; min-height: 44px; max-height: 180px;
+  padding: 13px 16px 4px;
+  border: none; outline: none; background: transparent;
+  resize: none; font-size: 14px; line-height: 1.6; color: var(--text);
+}
+.composer textarea::placeholder { color: var(--text-3); }
+
+.c-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 10px 10px;
+}
+.c-info { display: flex; gap: 5px; flex-wrap: wrap; }
+.tag {
+  font-size: 11px; padding: 2px 7px; border-radius: 4px;
+  background: rgba(255,255,255,.04); color: var(--text-3);
+  font-weight: 500;
+}
+
+.btn-send {
+  padding: 6px 18px; border-radius: 8px;
+  font-size: 13px; font-weight: 600;
+  background: var(--accent); color: #fff;
+  transition: background .1s;
+}
+.btn-send:hover { background: var(--accent-dim); }
+.btn-send.stop { background: var(--danger); }
+.btn-send.stop:hover { background: #dc2626; }
+
+/* ===== Markdown ===== */
+.msg-bd p,.msg-bd ul,.msg-bd ol,.msg-bd h1,.msg-bd h2,.msg-bd h3,.msg-bd blockquote,.msg-bd pre,.msg-bd table { margin: 0 0 10px; }
+.msg-bd > :last-child { margin-bottom: 0; }
+.msg-bd ul,.msg-bd ol { padding-left: 20px; }
+.msg-bd blockquote { padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 8px 8px 0; }
+.msg-bd h1 { font-size: 16px; font-weight: 600; } .msg-bd h2 { font-size: 15px; font-weight: 600; } .msg-bd h3 { font-size: 14px; font-weight: 600; }
+.cb,.ci { font-family: var(--mono); }
+.cb { display: block; padding: 14px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); overflow-x: auto; font-size: 13px; }
+.ci { padding: 1px 5px; border-radius: 4px; background: var(--bg); font-size: .88em; }
+.msg-bd a { color: var(--accent); }
+
+/* ===== Table ===== */
+.msg-bd table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px; line-height: 1.6;
+}
+.msg-bd thead th {
+  text-align: left; padding: 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-weight: 600; color: var(--text-2);
+  white-space: nowrap;
+}
+.msg-bd tbody td {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.msg-bd tbody tr:nth-child(even) td {
+  background: rgba(255,255,255,.02);
+}
+
+/* ===== Modal ===== */
+.mm {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.5); backdrop-filter: blur(2px);
+  display: grid; place-items: center; padding: 20px;
+}
+.mm.hidden { display: none; }
+
+.modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; width: min(620px, 100%);
+  max-height: 85vh; overflow-y: auto;
+}
+.modal::-webkit-scrollbar { width: 3px; }
+.modal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.m-head {
+  padding: 20px 24px 0;
+  display: flex; align-items: flex-start; justify-content: space-between;
+}
+.m-head h2 { font-size: 15px; font-weight: 600; }
+.m-head p { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+.m-body { padding: 20px 24px; }
+.m-foot {
+  padding: 14px 24px; border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap;
+}
+
+.fg { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ff { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.field .hint { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+.ti,.ts,.ta {
+  width: 100%; padding: 8px 11px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 13px;
+  transition: border-color .1s;
+}
+.ti:focus,.ts:focus,.ta:focus { outline: none; border-color: var(--accent); }
+.ti::placeholder,.ta::placeholder { color: var(--text-3); }
+.ts { appearance: none; }
+.ta { min-height: 76px; resize: vertical; line-height: 1.6; }
+
+.f-row { display: flex; gap: 8px; align-items: center; }
+.f-row .ti,.f-row .ts { flex: 1; }
+
+.sw-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+.sw-label { font-size: 13px; color: var(--text-2); }
+.sw {
+  width: 34px; height: 18px; border-radius: 9px;
+  background: var(--surface-3); border: 1px solid var(--border);
+  position: relative; cursor: pointer; transition: all .15s;
+  appearance: none; -webkit-appearance: none;
+}
+.sw::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--text-3); transition: all .15s;
+}
+.sw:checked { background: var(--accent); border-color: var(--accent); }
+.sw:checked::after { left: 18px; background: #fff; }
+
+.btn {
+  padding: 7px 14px; border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-2); transition: all .1s;
+}
+.btn:hover { background: var(--surface-3); color: var(--text); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-p { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-p:hover { background: var(--accent-dim); }
+.btn-d { color: var(--danger); }
+.btn-d:hover { background: #1c1113; }
+
+.hint-t { font-size: 11px; color: var(--text-3); line-height: 1.6; max-width: 340px; }
+.hint-t code { background: var(--bg); padding: 1px 4px; border-radius: 3px; font-family: var(--mono); font-size: 10px; }
+
+@media (max-width: 768px) {
+  .sidebar { width: 280px; }
+  .composer { width: calc(100% - 16px); }
+  .messages { padding: 64px 8px 148px; }
+  .fg { grid-template-columns: 1fr; }
+  .status-pill { max-width: 180px; }
+  .msg-bd table { font-size: 12px; }
+  .msg-bd thead th,.msg-bd tbody td { padding: 5px 8px; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar" id="sidebar">
+  <div class="sb-head">
+    <h3>Conversations</h3>
+    <button class="fab" style="width:28px;height:28px;font-size:12px;" id="closeSidebarBtn">&#10005;</button>
+  </div>
+  <div class="sb-body"><div id="convList"></div></div>
+  <div class="sb-foot"><button class="btn-full" id="newConvBtn">+ 新建对话</button></div>
+</div>
+
+<button class="fab fab-menu" id="menuBtn" title="对话列表">&#9776;</button>
+
+<div class="fab-group">
+  <button class="fab" id="syncBtn" title="云同步">&#9729;</button>
+  <button class="fab" id="settingsBtn" title="设置">&#9881;</button>
+  <button class="fab" id="newBtn" title="新建对话" style="font-size:18px;font-weight:300;">&#43;</button>
+</div>
+
+<div class="status-pill" id="status">就绪</div>
+
+<div class="messages" id="messages"></div>
+
+<form class="composer" id="form" autocomplete="off">
+  <textarea id="prompt" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+  <div class="c-bar">
+    <div class="c-info">
+      <span class="tag" id="profileInfo">默认方案</span>
+      <span class="tag" id="modelInfo">未配置</span>
+      <span class="tag" id="modeInfo">流式</span>
+    </div>
+    <button class="btn-send" id="sendBtn" type="submit">发送</button>
+  </div>
+</form>
+
+<div class="mm hidden" id="mask">
+  <div class="modal">
+    <div class="m-head">
+      <div><h2>设置</h2><p>配置接口、模型和参数，支持多方案切换。</p></div>
+      <button class="fab" style="width:28px;height:28px;font-size:12px;" id="closeBtn">&#10005;</button>
+    </div>
+    <div class="m-body">
+      <div class="fg">
+        <div class="ff"><div class="field"><label>设置方案</label><div class="f-row"><select id="profileSelect" class="ts"></select><button class="btn" id="newProfileBtn">新建</button><button class="btn btn-d" id="deleteProfileBtn">删除</button></div></div></div>
+        <div class="ff"><div class="field"><label for="profileName">方案名称</label><input id="profileName" class="ti" placeholder="例如：官方接口 / 本地模型"></div></div>
+        <div class="ff"><div class="field"><label for="baseUrl">接口地址</label><input id="baseUrl" class="ti" placeholder="https://api.openai.com/v1"></div></div>
+        <div class="field"><label for="apiKey">API Key</label><input id="apiKey" class="ti" type="password" placeholder="sk-..."></div>
+        <div class="field"><label for="model">模型</label><input id="model" class="ti" placeholder="gpt-4.1-mini"></div>
+        <div class="ff"><div class="field"><label for="systemPrompt">系统提示词</label><textarea id="systemPrompt" class="ta" placeholder="你是一个专业、准确、简洁的 AI 助手。"></textarea></div></div>
+        <div class="field"><label for="temperature">Temperature</label><input id="temperature" class="ti" type="number" min="0" max="2" step="0.1"></div>
+        <div class="field"><label for="wireApi">API 格式</label><select id="wireApi" class="ts"><option value="chat">Chat Completions</option><option value="responses">Responses API</option></select></div>
+        <div class="ff"><div class="field"><label for="proxyUrl">代理地址 <span style="font-weight:400;color:var(--text-3)">(可选)</span></label><input id="proxyUrl" class="ti" placeholder="http://localhost:3100"></div></div>
+        <div class="ff" style="display:flex;gap:16px;">
+          <div class="field" style="flex:1"><div class="sw-row"><span class="sw-label">流式返回</span><input id="stream" type="checkbox" class="sw"></div></div>
+          <div class="field" style="flex:1"><div class="sw-row"><span class="sw-label">思考模式</span><input id="thinking" type="checkbox" class="sw"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <span class="hint-t">跨域问题可运行：<code>python -m http.server 8000</code></span>
+      <div style="display:flex;gap:8px;"><button class="btn" id="closeBtn2">取消</button><button class="btn btn-p" id="saveBtn">保存</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="mm hidden" id="syncMask">
+  <div class="modal">
+    <div class="m-head">
+      <div><h2>云同步</h2><p>通过 GitHub Gist 在多设备间同步数据。</p></div>
+      <button class="fab" style="width:28px;height:28px;font-size:12px;" id="closeSyncBtn">&#10005;</button>
+    </div>
+    <div class="m-body">
+      <div class="fg">
+        <div class="ff"><div class="field"><label for="githubToken">GitHub Token</label><input id="githubToken" class="ti" type="password" placeholder="ghp_xxxx..."><span class="hint">在 Developer settings &rarr; Personal access tokens 创建，勾选 <code>gist</code> 权限。</span></div></div>
+        <div class="ff"><div class="field"><label for="gistId">Gist ID</label><div class="f-row"><input id="gistId" class="ti" placeholder="上传后自动生成" readonly><button class="btn" id="copyGistIdBtn">复制</button></div></div></div>
+        <div class="ff"><div class="field"><label>状态</label><div id="syncStatus" style="display:flex;gap:6px;"><span class="tag">尚未同步</span></div></div></div>
+        <div class="ff"><div class="sw-row"><div><span class="sw-label">自动同步</span><div class="hint" style="margin-top:2px;">数据变化后自动上传，打开时自动检查。</div></div><input id="autoSync" type="checkbox" class="sw"></div></div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <span class="hint-t">Token 仅保存在本地浏览器。</span>
+      <div style="display:flex;gap:8px;"><button class="btn" id="closeSyncBtn2">关闭</button><button class="btn" id="uploadBtn">上传</button><button class="btn btn-p" id="downloadBtn">下载</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="mm hidden" id="gistListMask">
+  <div class="modal">
+    <div class="m-head">
+      <div><h2>选择备份</h2><p>选择一个云端备份进行恢复。</p></div>
+      <button class="fab" style="width:28px;height:28px;font-size:12px;" id="closeGistListBtn">&#10005;</button>
+    </div>
+    <div class="m-body"><div id="gistList"></div></div>
+  </div>
+</div>
+
+<script>
+let monacoReady = false;
+const monacoEditors = {};
+
+const K={s:'ai-chat-lite:settings',c:'ai-chat-lite:conversations',y:'ai-chat-lite:sync'};
+const V=3,SV=1;
+const DF={baseUrl:'https://api.openai.com/v1',apiKey:'',model:'gpt-4.1-mini',systemPrompt:'你是一个专业、准确、简洁的 AI 助手。',temperature:.7,stream:true,thinking:false,wireApi:'chat',proxyUrl:''};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const IS=initS(read(K.s,null));
+const S={profiles:IS.profiles,activeProfileId:IS.activeProfileId,s:null,conversations:normC(read(K.c,[])),activeConvId:null,ctl:null,sync:read(K.y,{githubToken:'',gistId:'',syncedAt:null,autoSync:false,lastLocalUpdate:null}),syncTimer:null,syncing:false};
+let isBottom=true;
+
+const U={
+  messages:$('#messages'),form:$('#form'),prompt:$('#prompt'),send:$('#sendBtn'),status:$('#status'),
+  profileInfo:$('#profileInfo'),modelInfo:$('#modelInfo'),modeInfo:$('#modeInfo'),
+  mask:$('#mask'),settingsBtn:$('#settingsBtn'),newBtn:$('#newBtn'),closeBtn:$('#closeBtn'),closeBtn2:$('#closeBtn2'),saveBtn:$('#saveBtn'),
+  profileSelect:$('#profileSelect'),newProfileBtn:$('#newProfileBtn'),deleteProfileBtn:$('#deleteProfileBtn'),
+  profileName:$('#profileName'),baseUrl:$('#baseUrl'),apiKey:$('#apiKey'),model:$('#model'),
+  systemPrompt:$('#systemPrompt'),temperature:$('#temperature'),stream:$('#stream'),thinking:$('#thinking'),wireApi:$('#wireApi'),proxyUrl:$('#proxyUrl'),
+  sidebar:$('#sidebar'),menuBtn:$('#menuBtn'),closeSidebarBtn:$('#closeSidebarBtn'),
+  convList:$('#convList'),newConvBtn:$('#newConvBtn'),
+  syncMask:$('#syncMask'),syncBtn:$('#syncBtn'),closeSyncBtn:$('#closeSyncBtn'),closeSyncBtn2:$('#closeSyncBtn2'),
+  githubToken:$('#githubToken'),gistId:$('#gistId'),copyGistIdBtn:$('#copyGistIdBtn'),
+  syncStatus:$('#syncStatus'),uploadBtn:$('#uploadBtn'),downloadBtn:$('#downloadBtn'),
+  gistListMask:$('#gistListMask'),gistList:$('#gistList'),closeGistListBtn:$('#closeGistListBtn'),
+  autoSync:$('#autoSync')
+};
+init();
+
+function init(){
+  ensureP();persistS();fill();bind();ensureC();renderConv();render();refresh();resize();
+  setTimeout(()=>{const el=U.messages;isBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80;},100);
+  if(!S.s.apiKey||!S.s.baseUrl||!S.s.model)st('请先配置接口');
+}
+
+function bind(){
+  U.form.addEventListener('submit',submit);
+  U.prompt.addEventListener('input',resize);
+  U.prompt.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();U.form.requestSubmit();}});
+  U.settingsBtn.addEventListener('click',()=>showM('mask',true));
+  U.closeBtn.addEventListener('click',()=>showM('mask',false));
+  U.closeBtn2.addEventListener('click',()=>showM('mask',false));
+  U.saveBtn.addEventListener('click',saveSettings);
+  U.newBtn.addEventListener('click',newConv);
+  U.profileSelect.addEventListener('change',switchP);
+  U.newProfileBtn.addEventListener('click',createP);
+  U.deleteProfileBtn.addEventListener('click',deleteP);
+  U.mask.addEventListener('click',e=>{if(e.target===U.mask)showM('mask',false);});
+  U.messages.addEventListener('click',e=>{const t=e.target.closest('[data-suggest]');if(t){U.prompt.value=t.dataset.suggest||'';resize();U.prompt.focus();}});
+  U.messages.addEventListener('scroll',()=>{
+    const el=U.messages;isBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80;
+    if(isBottom||S.ctl)U.form.classList.remove('hidden');
+    else if(!U.prompt.value.trim()&&document.activeElement!==U.prompt)U.form.classList.add('hidden');
+  });
+  U.prompt.addEventListener('focus',()=>U.form.classList.remove('hidden'));
+  U.menuBtn.addEventListener('click',()=>U.sidebar.classList.toggle('open'));
+  U.closeSidebarBtn.addEventListener('click',()=>U.sidebar.classList.remove('open'));
+  U.newConvBtn.addEventListener('click',()=>{newConv();U.sidebar.classList.remove('open');});
+  U.convList.addEventListener('click',convClick);
+  document.addEventListener('click',e=>{if(U.sidebar.classList.contains('open')&&!U.sidebar.contains(e.target)&&!U.menuBtn.contains(e.target))U.sidebar.classList.remove('open');});
+  U.syncBtn.addEventListener('click',()=>showM('syncMask',true));
+  U.closeSyncBtn.addEventListener('click',()=>showM('syncMask',false));
+  U.closeSyncBtn2.addEventListener('click',()=>showM('syncMask',false));
+  U.syncMask.addEventListener('click',e=>{if(e.target===U.syncMask)showM('syncMask',false);});
+  U.githubToken.addEventListener('change',()=>{S.sync.githubToken=U.githubToken.value.trim();persistSy();});
+  U.copyGistIdBtn.addEventListener('click',copyGistId);
+  U.uploadBtn.addEventListener('click',upload);
+  U.downloadBtn.addEventListener('click',download);
+  U.closeGistListBtn.addEventListener('click',()=>showM('gistListMask',false));
+  U.gistListMask.addEventListener('click',e=>{if(e.target===U.gistListMask)showM('gistListMask',false);});
+  U.autoSync.addEventListener('change',toggleAS);
+  initAS();
+}
+
+function showM(id,v){document.getElementById(id).classList.toggle('hidden',!v);}
+function convClick(e){
+  const item=e.target.closest('.conv-item');if(!item)return;const id=item.dataset.id;
+  if(e.target.closest('.del')){e.stopPropagation();delConv(id);return;}
+  if(e.target.closest('.rn')){e.stopPropagation();renameConv(id);return;}
+  selConv(id);U.sidebar.classList.remove('open');
+}
+
+// ===== Conversations =====
+function cId(){return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function normC(a){return Array.isArray(a)?a.filter(x=>x&&x.id&&Array.isArray(x.messages)).map(x=>({id:x.id,title:x.title||'新对话',messages:normM(x.messages),createdAt:x.createdAt||new Date().toISOString(),updatedAt:x.updatedAt||new Date().toISOString(),titleGenerated:!!x.titleGenerated})):[];}
+function normM(a){return Array.isArray(a)?a.filter(x=>x&&typeof x.role==='string'&&typeof x.content==='string').map(x=>({id:x.id||mId(),role:x.role==='assistant'?'assistant':'user',content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error})):[];}
+function mId(){return 'm_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function mkMsg(role,content,extra={}){return{id:mId(),role,content,time:new Date().toISOString(),pending:false,error:false,latency:null,speed:null,...extra};}
+function ensureC(){if(!S.conversations.length){const c=mkConv();S.conversations.push(c);S.activeConvId=c.id;persistC();}if(!S.activeConvId||!S.conversations.find(x=>x.id===S.activeConvId))S.activeConvId=S.conversations[0]?.id;}
+function mkConv(){return{id:cId(),title:'新对话',messages:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),titleGenerated:false};}
+function newConv(){if(S.ctl)S.ctl.abort();S.ctl=null;const c=mkConv();S.conversations.unshift(c);S.activeConvId=c.id;persistC();renderConv();render();refresh();st('新对话已创建');U.prompt.focus();}
+function selConv(id){if(id===S.activeConvId)return;if(S.ctl)S.ctl.abort();S.ctl=null;S.activeConvId=id;persistC();renderConv();render();refresh();U.prompt.focus();}
+function delConv(id){if(S.conversations.length<=1){st('至少保留一个对话');return;}const c=S.conversations.find(x=>x.id===id);if(!confirm(`删除「${c?.title||''}」？`))return;const i=S.conversations.findIndex(x=>x.id===id);S.conversations.splice(i,1);if(id===S.activeConvId)S.activeConvId=(S.conversations[i]||S.conversations[i-1]||S.conversations[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistC();renderConv();render();refresh();}
+function renameConv(id){const c=S.conversations.find(x=>x.id===id);if(!c)return;const t=prompt('新标题：',c.title);if(t===null||!t.trim())return;c.title=t.trim();c.updatedAt=new Date().toISOString();persistC();renderConv();}
+function aConv(){return S.conversations.find(x=>x.id===S.activeConvId);}
+function persistC(){write(K.c,S.conversations.map(c=>({id:c.id,title:c.title,messages:c.messages.map(({id,role,content,time,error})=>({id,role,content,time,error:!!error})),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated})));markLU();}
+function renderConv(){U.convList.innerHTML=S.conversations.map(c=>{const a=c.id===S.activeConvId;const n=c.messages.filter(x=>!x.pending).length;return`<div class="conv-item${a?' active':''}" data-id="${esc(c.id)}"><div class="title">${esc(c.title)}</div><div class="meta"><span>${n} 条</span><span>${fmtD(c.updatedAt)}</span></div><div class="actions"><button class="rn">重命名</button><button class="del">删除</button></div></div>`;}).join('');}
+function fmtD(v){try{const d=new Date(v),now=new Date();if(d.toDateString()===now.toDateString())return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});if(new Date(now-864e5).toDateString()===d.toDateString())return'昨天';if(now.getFullYear()===d.getFullYear())return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric'});return d.toLocaleDateString('zh-CN',{year:'numeric',month:'short',day:'numeric'});}catch{return'';}}
+
+// ===== Settings =====
+function read(k,f){try{const v=localStorage.getItem(k);return v?JSON.parse(v):f;}catch{return f;}}
+function write(k,v){localStorage.setItem(k,JSON.stringify(v));}
+function tv(v,f=''){return v==null?f:String(v);}
+function clampT(v){const n=Number(v);return Number.isFinite(n)?Math.max(0,Math.min(2,n)):DF.temperature;}
+function pN(v,f='未命名'){const t=tv(v,'').trim();return t||f;}
+function pF(v={}){const s={...DF,...(v||{})};return{baseUrl:tv(s.baseUrl,'').trim(),apiKey:tv(s.apiKey,'').trim(),model:tv(s.model,'').trim(),systemPrompt:tv(s.systemPrompt,'').trim(),temperature:clampT(s.temperature),stream:!!s.stream,thinking:!!s.thinking,wireApi:s.wireApi==='responses'?'responses':'chat',proxyUrl:tv(s.proxyUrl,'').trim()};}
+function mkP(v={},fb='默认方案'){return{id:typeof v.id==='string'&&v.id.trim()?v.id:'p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),name:pN(v.name,fb),...pF(v)};}
+function initS(raw){if(raw&&typeof raw==='object'&&Array.isArray(raw.profiles)){const ps=raw.profiles.map((x,i)=>mkP(x,i?`方案 ${i+1}`:'默认方案'));const l=ps.length?ps:[mkP({},'默认方案')];return{profiles:l,activeProfileId:l.some(x=>x.id===raw.activeProfileId)?raw.activeProfileId:l[0].id};}const lg=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};const f=mkP(lg,pN(lg.name,'默认方案'));return{profiles:[f],activeProfileId:f.id};}
+function ensureP(){if(!S.profiles.length)S.profiles=[mkP({},'默认方案')];S.s=S.profiles.find(x=>x.id===S.activeProfileId)||S.profiles[0];S.activeProfileId=S.s.id;return S.s;}
+function persistS(){ensureP();write(K.s,{version:V,activeProfileId:S.activeProfileId,profiles:S.profiles.map(({id,name,baseUrl,apiKey,model,systemPrompt,temperature,stream,thinking,wireApi,proxyUrl})=>({id,name,baseUrl,apiKey,model,systemPrompt,temperature,stream,thinking,wireApi,proxyUrl}))});markLU();}
+function syncP(){ensureP();U.profileSelect.innerHTML=S.profiles.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');U.profileSelect.value=S.activeProfileId;U.deleteProfileBtn.disabled=S.profiles.length<=1;}
+function fill(){ensureP();syncP();U.profileName.value=S.s.name||'';U.baseUrl.value=S.s.baseUrl||'';U.apiKey.value=S.s.apiKey||'';U.model.value=S.s.model||'';U.systemPrompt.value=S.s.systemPrompt||'';U.temperature.value=Number(S.s.temperature??DF.temperature).toFixed(1);U.stream.checked=!!S.s.stream;U.thinking.checked=!!S.s.thinking;U.wireApi.value=S.s.wireApi==='responses'?'responses':'chat';U.proxyUrl.value=S.s.proxyUrl||'';}
+function formP(){return{name:pN(U.profileName.value,'未命名'),baseUrl:U.baseUrl.value.trim(),apiKey:U.apiKey.value.trim(),model:U.model.value.trim(),systemPrompt:U.systemPrompt.value.trim(),temperature:clampT(U.temperature.value),stream:U.stream.checked,thinking:U.thinking.checked,wireApi:U.wireApi.value==='responses'?'responses':'chat',proxyUrl:U.proxyUrl.value.trim()};}
+function hasPChanges(){ensureP();return JSON.stringify(formP())!==JSON.stringify({name:pN(S.s.name,'未命名'),...pF(S.s)});}
+function saveSettings(){Object.assign(S.s,formP());persistS();fill();refresh();showM('mask',false);st(S.s.baseUrl&&S.s.apiKey&&S.s.model?`已保存「${S.s.name}」`:`已保存「${S.s.name}」，请补充完整配置`);U.prompt.focus();}
+function switchP(){const prev=S.activeProfileId,next=U.profileSelect.value;if(!next||next===prev)return;if(hasPChanges()&&!confirm('有未保存的更改，确定切换？')){U.profileSelect.value=prev;return;}S.activeProfileId=next;ensureP();persistS();fill();refresh();st(`已切换到「${S.s.name}」`);}
+function createP(){const seed=(U.profileName.value.trim()||S.s.name||'新方案')+' 副本';const names=new Set(S.profiles.map(x=>x.name));let nm=seed,i=2;while(names.has(nm))nm=`${seed} ${i++}`;const p=mkP({...formP(),name:nm},nm);S.profiles.push(p);S.activeProfileId=p.id;ensureP();persistS();fill();refresh();}
+function deleteP(){ensureP();if(S.profiles.length<=1)return st('至少保留一个方案');if(!confirm(`删除「${S.s.name}」？`))return;const i=S.profiles.findIndex(x=>x.id===S.s.id);S.profiles.splice(i,1);S.activeProfileId=(S.profiles[i]||S.profiles[i-1]||S.profiles[0]).id;ensureP();persistS();fill();refresh();}
+function refresh(){ensureP();U.profileInfo.textContent=S.s.name||'默认方案';U.modelInfo.textContent=S.s.model||'未配置';U.modeInfo.textContent=(S.s.stream?'流式':'非流式')+(S.s.thinking?' · 思考':'');U.send.textContent=S.ctl?'停止':'发送';U.send.className='btn-send'+(S.ctl?' stop':'');}
+function st(t){U.status.textContent=t;}
+function resize(){U.prompt.style.height='auto';U.prompt.style.height=Math.min(U.prompt.scrollHeight,180)+'px';}
+
+// ===== Messages =====
+async function submit(e){e.preventDefault();if(S.ctl){S.ctl.abort();return;}const text=U.prompt.value.trim();if(!text)return U.prompt.focus();if(!S.s.baseUrl||!S.s.apiKey||!S.s.model){st('请先配置接口');return showM('mask',true);}const conv=aConv();if(!conv)return;const user=mkMsg('user',text),ai=mkMsg('assistant','',{pending:true});conv.messages.push(user,ai);conv.updatedAt=new Date().toISOString();persistC();renderConv();render({scroll:true});U.prompt.value='';resize();try{await reply(ai.id);if(!conv.titleGenerated&&conv.messages.filter(x=>!x.pending).length>=2)await genTitle(conv);}catch(err){const t=conv.messages.find(x=>x.id===ai.id);if(t){t.pending=false;t.error=!(err?.name==='AbortError');t.content=err?.name==='AbortError'?(t.content||'已停止'):'请求失败：'+(err?.message||'未知');}st(err?.name==='AbortError'?'已停止':'请求失败');}finally{S.ctl=null;persistC();renderConv();refresh();render();U.prompt.focus();}}
+
+async function reply(mid){const conv=aConv();if(!conv)return;const ai=conv.messages.find(x=>x.id===mid);if(!ai)return;S.ctl=new AbortController();refresh();st('正在生成...');const t0=Date.now();const url=ep(S.s.baseUrl);const px=S.s.proxyUrl?S.s.proxyUrl.replace(/\/+$/,''):'';const fu=px?`${px}/proxy?url=${encodeURIComponent(url)}`:url;let body;if(S.s.wireApi==='responses')body={model:S.s.model,input:apiMsgs(conv),stream:S.s.stream};else body={model:S.s.model,messages:apiMsgs(conv),temperature:S.s.temperature,stream:S.s.stream};const res=await fetch(fu,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});if(!res.ok){const errBody=await res.text();throw new Error(errBody||('HTTP '+res.status));}const ct=res.headers.get('content-type')||'';let fc=null;if(/event-stream/i.test(ct)&&res.body){await rStream(res,chunk=>{if(fc===null){fc=Date.now();ai.latency=fc-t0;}ai.content+=chunk;render();});}else{fc=Date.now();const raw=await res.text();try{const json=JSON.parse(raw);ai.content=cText(json)||'接口返回为空';}catch(e){ai.content=raw||'接口返回为空';}ai.latency=fc-t0;}const dur=(Date.now()-t0)/1000;if(dur>0&&ai.content&&ai.content!=='接口返回为空')ai.speed=(ai.content.length/dur).toFixed(1);ai.pending=false;ai.error=false;if(!ai.content.trim())ai.content='接口返回为空';st('完成');}
+
+async function genTitle(conv){if(!S.s.baseUrl||!S.s.apiKey||!S.s.model)return;try{const um=conv.messages.filter(x=>x.role==='user').slice(0,2).map(x=>x.content).join('\n');const url=epChat(S.s.baseUrl);const px=S.s.proxyUrl?S.s.proxyUrl.replace(/\/+$/,''):'';const fu=px?`${px}/proxy?url=${encodeURIComponent(url)}`:url;const res=await fetch(fu,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify({model:S.s.model,messages:[{role:'system',content:'用不超过15个字概括对话主题，只输出标题'},{role:'user',content:um}],temperature:.7,max_tokens:30})});if(!res.ok)return;const json=await res.json();const title=cText(json)?.trim();if(title){conv.title=title.slice(0,20);conv.titleGenerated=true;conv.updatedAt=new Date().toISOString();persistC();renderConv();}}catch{}}
+
+function apiMsgs(conv){const out=[];const sys=sysPrompt();if(sys)out.push({role:'system',content:sys});conv.messages.forEach(x=>!x.pending&&out.push({role:x.role,content:x.content}));return out;}
+function sysPrompt(){return[S.s.systemPrompt?.trim(),S.s.thinking?'当前为思考模式。请先分析问题、拆解步骤，再给出清晰的最终答案。':'当前为非思考模式。请直接给出简洁明确的答案。'].filter(Boolean).join('\n\n');}
+
+function ep(u){const c=String(u||'').trim().replace(/\/+$/,'');if(!c)return'';const r=S.s.wireApi==='responses';if(r){if(/\/responses$/i.test(c))return c;if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/responses';return c+'/v1/responses';}if(/\/chat\/completions$/i.test(c))return c;if(/\/responses$/i.test(c))return c.replace(/\/responses$/i,'/chat/completions');if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions';}
+function epChat(u){const c=String(u||'').trim().replace(/\/+$/,'');if(!c)return'';if(/\/chat\/completions$/i.test(c))return c;if(/\/responses$/i.test(c))return c.replace(/\/responses$/i,'/chat/completions');if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions';}
+
+async function rStream(res,cb){const reader=res.body.getReader(),dec=new TextDecoder();let buf='';while(true){const{done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});}const content=buf.trim();if(content.includes('data:')){content.split(/\r?\n\r?\n/).forEach(p=>{p.split(/\r?\n/).forEach(l=>{if(!l.startsWith('data:'))return;const t=l.slice(5).trim();if(!t||t==='[DONE]')return;try{const json=JSON.parse(t);if(S.s.wireApi==='responses'){const text=extRT(json);if(text)cb(text);}else{const d=cText(json);if(d)cb(d);}}catch{}});});}else{try{const json=JSON.parse(content);const text=extRT(json);if(text)cb(text);else{const fb=cText(json);if(fb)cb(fb);}}catch{}}}
+function extRT(json){if(json?.output&&Array.isArray(json.output)){for(const item of json.output){if(item.content&&Array.isArray(item.content)){for(const c of item.content){if(c.type==='output_text'&&c.text)return c.text;if(c.type==='text'&&c.text)return c.text;if(typeof c.text==='string'&&c.text)return c.text;}}if(typeof item.text==='string')return item.text;}}if(json?.type==='response.output_text.delta'&&json?.delta)return json.delta;if(json?.delta?.text)return json.delta.text;return'';}
+function cText(p){if(p?.output&&Array.isArray(p.output)){const parts=[];for(const item of p.output){if(item.content&&Array.isArray(item.content)){for(const c of item.content){if(c.type==='output_text'&&c.text)parts.push(c.text);else if(typeof c.text==='string'&&c.text)parts.push(c.text);}}if(typeof item.text==='string')parts.push(item.text);}if(parts.length)return parts.join('');}const c=p?.choices?.[0];return normC2(c?.delta?.content??c?.message?.content);}
+function normC2(v){return typeof v==='string'?v:Array.isArray(v)?v.map(x=>typeof x==='string'?x:x?.text??x?.content??'').join(''):'';}
+
+// ===== Render =====
+function render(opts={}){const conv=aConv();const msgs=conv?.messages||[];U.messages.innerHTML=msgs.length?'<div class="msg-stack">'+msgs.map(vMsg).join('')+'</div>':emptyH();if(opts.scroll)U.messages.scrollTop=U.messages.scrollHeight;if(monacoReady)document.querySelectorAll('.cb').forEach(initCB);}
+function emptyH(){return'<div class="msg-stack"><div class="empty"><h2>AI Chat Lite</h2><p>轻量、实用的 AI 对话工具。配置接口后即可开始。</p><div class="chips"><button class="chip" data-suggest="帮我总结下面这段内容：">总结内容</button><button class="chip" data-suggest="请解释这段代码：">解释代码</button><button class="chip" data-suggest="帮我写一段产品介绍文案。">生成文案</button></div></div></div>';}
+function vMsg(m){const u=m.role==='user';const cls=['msg',u?'user':'assistant',m.error?'error':''].filter(Boolean).join(' ');const pf=!u&&!m.pending&&!m.error&&m.latency!=null?`<span class="msg-pf">${m.latency}ms · ${m.speed||'0'} 字/s</span>`:'';return`<div class="${cls}"><div class="msg-hd"><span class="msg-av">${u?'U':'AI'}</span><span class="msg-nm">${u?'你':'AI'}</span>${pf}<span class="msg-tm">${fmtT(m.time)}</span></div><div class="msg-bd">${mBd(m,u)}</div></div>`;}
+function mBd(m,u){if(m.pending&&!m.content)return'<div class="typing"><span></span><span></span><span></span></div>';if(u||m.pending)return'<p>'+esc(m.content).replace(/\n/g,'<br>')+'</p>';return md(m.content);}
+
+// ===== Markdown 解析（含表格） =====
+function md(t){
+  const raw = String(t||'').replace(/\r/g,'').split('\n');
+  const out = [];
+  let i = 0;
+  while(i < raw.length){
+    // Code block
+    if(raw[i].match(/^```/)){
+      const lang = raw[i].slice(3).trim();
+      const lines = [];
+      i++;
+      while(i < raw.length && !raw[i].match(/^```/)){
+        lines.push(raw[i]); i++;
+      }
+      i++; // skip closing ```
+      const src = lines.join('\n').replace(/^\n+|\n+$/g,'');
+      const langSafe = /^[a-zA-Z0-9_+#.-]{1,24}$/.test(lang) ? lang : '';
+      out.push(`<pre class="cb"><code>${langSafe?'<b>'+esc(langSafe)+'</b>\n':''}${esc(src)}</code></pre>`);
+      continue;
+    }
+    // Table
+    if(isTableLine(raw[i])){
+      const tableLines = [];
+      while(i < raw.length && isTableLine(raw[i])){
+        tableLines.push(raw[i]); i++;
+      }
+      out.push(buildTable(tableLines));
+      continue;
+    }
+    // Text block (paragraph, list, heading, blockquote)
+    const textLines = [];
+    while(i < raw.length && !raw[i].match(/^```/) && !isTableLine(raw[i])){
+      textLines.push(raw[i]); i++;
+    }
+    if(textLines.length) out.push(tB(textLines.join('\n')));
+  }
+  return out.join('') || '<p></p>';
+}
+
+// ===== Table =====
+function isTableLine(line){
+  const s = (line||'').trim();
+  return /^\|.*\|$/.test(s) || /^\|.*\|$/.test(s.replace(/^[^|]/,'|'));
+}
+
+function buildTable(lines){
+  // Parse cells from pipe-delimited lines
+  const rows = lines.map(l => {
+    const s = l.trim();
+    // Remove leading/trailing pipe, split by |
+    const inner = s.replace(/^\|/,'').replace(/\|$/,'');
+    return inner.split('|').map(c => c.trim());
+  });
+
+  // Find separator row (e.g. |---|---|)
+  let sepIdx = -1;
+  for(let i = 0; i < rows.length; i++){
+    if(rows[i].every(c => /^[-:]+$/.test(c))){
+      sepIdx = i; break;
+    }
+  }
+
+  // Determine alignment from separator
+  let aligns = [];
+  if(sepIdx >= 0){
+    aligns = rows[sepIdx].map(c => {
+      if(c.startsWith(':') && c.endsWith(':')) return 'center';
+      if(c.endsWith(':')) return 'right';
+      return 'left';
+    });
+  }
+
+  // Build HTML
+  let html = '<table>';
+
+  // Header
+  const headerRow = sepIdx >= 0 ? rows[0] : null;
+  if(headerRow){
+    html += '<thead><tr>';
+    headerRow.forEach((cell, ci) => {
+      const a = aligns[ci] ? ` style="text-align:${aligns[ci]}"` : '';
+      html += `<th${a}>${inline(cell)}</th>`;
+    });
+    html += '</tr></thead>';
+  }
+
+  // Body
+  const bodyStart = sepIdx >= 0 ? sepIdx + 1 : 0;
+  const bodyRows = rows.slice(bodyStart);
+  if(bodyRows.length){
+    html += '<tbody>';
+    bodyRows.forEach(row => {
+      // Skip empty rows
+      if(row.length === 1 && !row[0]) return;
+      html += '<tr>';
+      row.forEach((cell, ci) => {
+        const a = aligns[ci] ? ` style="text-align:${aligns[ci]}"` : '';
+        html += `<td${a}>${inline(cell)}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody>';
+  }
+
+  html += '</table>';
+  return html;
+}
+
+function tB(t){
+  const out=[],lines=String(t||'').replace(/\r/g,'').split('\n');let list='',quote=[];
+  const fl=()=>{if(list){out.push(`</${list}>`);list='';}};
+  const fq=()=>{if(quote.length){out.push('<blockquote>'+quote.map(inline).join('<br>')+'</blockquote>');quote=[];}};
+  for(const raw of lines){
+    const line=raw.trim();const h=line.match(/^(#{1,3})\s+(.*)$/);const q=line.match(/^>\s?(.*)$/);const ol=line.match(/^\d+\.\s+(.*)$/);const ul=line.match(/^[-*+]\s+(.*)$/);
+    if(!line){fl();fq();continue;}if(h){fl();fq();out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);continue;}if(q){fl();quote.push(q[1]);continue;}
+    if(ol){fq();if(list!=='ol'){fl();list='ol';out.push('<ol>');}out.push('<li>'+inline(ol[1])+'</li>');continue;}if(ul){fq();if(list!=='ul'){fl();list='ul';out.push('<ul>');}out.push('<li>'+inline(ul[1])+'</li>');continue;}
+    fl();fq();out.push('<p>'+inline(line)+'</p>');
+  }
+  fl();fq();return out.join('')||'<p></p>';
+}
+
+function inline(t){let h=esc(t);h=h.replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');h=h.replace(/`([^`]+)`/g,'<code class="ci">$1</code>');h=h.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');h=h.replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>');return h;}
+function fmtT(v){try{return new Date(v).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}catch{return'';}}
+
+// ===== Cloud Sync =====
+function persistSy(){write(K.y,{version:SV,githubToken:S.sync.githubToken,gistId:S.sync.gistId,syncedAt:S.sync.syncedAt,autoSync:S.sync.autoSync,lastLocalUpdate:S.sync.lastLocalUpdate});}
+function updateSy(){const s=S.sync.syncedAt?`上次：${fmtSy(S.sync.syncedAt)}`:'尚未同步';const g=S.sync.gistId?`ID：${S.sync.gistId.slice(0,8)}...`:'未创建';U.syncStatus.innerHTML=`<span class="tag">${s}</span><span class="tag">${g}</span>`;U.gistId.value=S.sync.gistId||'';}
+function fmtSy(v){try{const d=new Date(v),now=new Date(),diff=now-d;if(diff<6e4)return'刚刚';if(diff<36e5)return`${Math.floor(diff/6e4)} 分钟前`;if(diff<864e5)return`${Math.floor(diff/36e5)} 小时前`;return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}catch{return'未知';}}
+function copyGistId(){if(!S.sync.gistId)return st('无 Gist ID');navigator.clipboard.writeText(S.sync.gistId).then(()=>st('已复制')).catch(()=>st('复制失败'));}
+async function upload(){const token=U.githubToken.value.trim();if(!token){st('请填写 Token');return;}S.sync.githubToken=token;persistSy();st('正在上传...');U.uploadBtn.disabled=true;try{const data={version:SV,syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};const gid=S.sync.gistId;const url=gid?`https://api.github.com/gists/${gid}`:'https://api.github.com/gists';const res=await fetch(url,{method:gid?'PATCH':'POST',headers:{Authorization:`token ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Backup',public:false,files:{'ai-chat-lite-data.json':{content:JSON.stringify(data,null,2)}}})});if(!res.ok){const e=await res.json();throw new Error(e.message||`HTTP ${res.status}`);}const r=await res.json();if(!gid)S.sync.gistId=r.id;S.sync.syncedAt=new Date().toISOString();persistSy();updateSy();st('上传成功');}catch(e){st(`上传失败：${e.message}`);}finally{U.uploadBtn.disabled=false;}}
+async function download(){const token=U.githubToken.value.trim();if(!token){st('请填写 Token');return;}S.sync.githubToken=token;persistSy();if(S.sync.gistId){await dlById(S.sync.gistId,token);return;}st('正在获取列表...');U.downloadBtn.disabled=true;try{const res=await fetch('https://api.github.com/gists',{headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json'}});if(!res.ok)throw new Error(`HTTP ${res.status}`);const gists=await res.json();const cg=gists.filter(g=>g.files?.['ai-chat-lite-data.json']);if(!cg.length){st('无备份');return;}U.gistList.innerHTML=cg.map(g=>`<div class="conv-item" data-gist-id="${esc(g.id)}"><div class="title">${esc(g.description||'AI Chat Lite 备份')}</div><div class="meta"><span>${fmtSy(g.updated_at||g.created_at)}</span></div></div>`).join('');U.gistList.onclick=async e=>{const item=e.target.closest('.conv-item');if(item){showM('gistListMask',false);await dlById(item.dataset.gistId,token);}};showM('gistListMask',true);}catch(e){st(`获取失败：${e.message}`);}finally{U.downloadBtn.disabled=false;}}
+async function dlById(gid,token){st('正在下载...');try{const res=await fetch(`https://api.github.com/gists/${gid}`,{headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json'}});if(!res.ok)throw new Error(`HTTP ${res.status}`);const gist=await res.json();const file=gist.files?.['ai-chat-lite-data.json'];if(!file?.content)throw new Error('文件为空');const data=JSON.parse(file.content);if(!confirm('覆盖本地数据？'))return;if(data.settings){write(K.s,data.settings);S.profiles=initS(data.settings).profiles;S.activeProfileId=initS(data.settings).activeProfileId;S.s=null;ensureP();persistS();fill();refresh();}if(data.conversations){write(K.c,data.conversations);S.conversations=normC(data.conversations);S.activeConvId=null;ensureC();persistC();renderConv();render();}S.sync.gistId=gid;S.sync.syncedAt=new Date().toISOString();persistSy();updateSy();st('恢复成功');}catch(e){st(`下载失败：${e.message}`);}}
+
+function initAS(){U.autoSync.checked=!!S.sync.autoSync;if(S.sync.autoSync&&S.sync.githubToken&&S.sync.gistId)setTimeout(()=>autoCheck(),1000);}
+function toggleAS(){S.sync.autoSync=U.autoSync.checked;persistSy();if(S.sync.autoSync&&S.sync.githubToken&&S.sync.gistId)autoCheck();}
+function markLU(){S.sync.lastLocalUpdate=new Date().toISOString();persistSy();if(S.sync.autoSync&&S.sync.githubToken)scheduleAU();}
+function scheduleAU(){if(S.syncTimer)clearTimeout(S.syncTimer);S.syncTimer=setTimeout(()=>{if(!S.syncing&&S.sync.githubToken)autoUp();},3000);}
+async function autoCheck(){if(!S.sync.githubToken||!S.sync.gistId||S.syncing)return;S.syncing=true;try{const res=await fetch(`https://api.github.com/gists/${S.sync.gistId}`,{headers:{Authorization:`token ${S.sync.githubToken}`,Accept:'application/vnd.github.v3+json'}});if(!res.ok)return;const gist=await res.json();const file=gist.files?.['ai-chat-lite-data.json'];if(!file?.content)return;const cd=JSON.parse(file.content);const ct=cd.syncedAt?new Date(cd.syncedAt).getTime():0;const ls=S.sync.syncedAt?new Date(S.sync.syncedAt).getTime():0;const lu=S.sync.lastLocalUpdate?new Date(S.sync.lastLocalUpdate).getTime():0;if(ct>ls&&ct>lu)await applyCD(cd,gist.id);else if(lu>ls)await autoUp();}catch{}finally{S.syncing=false;}}
+async function autoUp(){if(!S.sync.githubToken||S.syncing)return;S.syncing=true;try{const data={version:SV,syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};const gid=S.sync.gistId;const url=gid?`https://api.github.com/gists/${gid}`:'https://api.github.com/gists';const res=await fetch(url,{method:gid?'PATCH':'POST',headers:{Authorization:`token ${S.sync.githubToken}`,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Backup',public:false,files:{'ai-chat-lite-data.json':{content:JSON.stringify(data,null,2)}}})});if(!res.ok)return;const r=await res.json();if(!gid)S.sync.gistId=r.id;S.sync.syncedAt=new Date().toISOString();persistSy();}catch{}finally{S.syncing=false;}}
+async function applyCD(data,gid){if(data.settings){write(K.s,data.settings);S.profiles=initS(data.settings).profiles;S.activeProfileId=initS(data.settings).activeProfileId;S.s=null;ensureP();persistS();fill();refresh();}if(data.conversations){write(K.c,data.conversations);S.conversations=normC(data.conversations);S.activeConvId=null;ensureC();persistC();renderConv();render();}S.sync.gistId=gid;S.sync.syncedAt=data.syncedAt||new Date().toISOString();persistSy();updateSy();}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script>
+require.config({paths:{vs:'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'}});
+require(['vs/editor/editor.main'],function(){
+  monaco.editor.defineTheme('chat-dark',{base:'vs-dark',inherit:true,rules:[],colors:{'editor.background':'#09090b','editor.lineHighlightBackground':'#09090b'}});
+  monacoReady=true;document.querySelectorAll('.cb').forEach(initCB);
+});
+function initCB(el){if(el.dataset.monaco)return;const code=el.querySelector('code');if(!code)return;const text=code.textContent.replace(/^[^\n]*\n/,'');const langLine=code.querySelector('b');const lang=langLine?langLine.textContent.trim():'plaintext';el.dataset.monaco='pending';el.innerHTML='';el.style.position='relative';el.style.padding='0';const toolbar=document.createElement('div');toolbar.style.cssText='position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:10;';const copyBtn=document.createElement('button');copyBtn.className='btn';copyBtn.style.cssText='padding:3px 10px;font-size:11px;';copyBtn.textContent='复制';copyBtn.onclick=()=>{navigator.clipboard.writeText(text);copyBtn.textContent='已复制';setTimeout(()=>copyBtn.textContent='复制',1500);};const downBtn=document.createElement('button');downBtn.className='btn';downBtn.style.cssText='padding:3px 10px;font-size:11px;';downBtn.textContent='下载';const ext=langExt(lang);downBtn.onclick=()=>{const blob=new Blob([text],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`code.${ext}`;a.click();URL.revokeObjectURL(a.href);};toolbar.appendChild(copyBtn);toolbar.appendChild(downBtn);el.appendChild(toolbar);const editorEl=document.createElement('div');editorEl.style.cssText='height:'+Math.min(text.split('\n').length*18+32,400)+'px;';el.appendChild(editorEl);const editor=monaco.editor.create(editorEl,{value:text,language:lang,theme:'chat-dark',readOnly:true,minimap:{enabled:false},scrollBeyondLastLine:false,lineNumbers:'off',folding:false,wordWrap:'on',fontSize:13,fontFamily:'IBM Plex Mono,Menlo,monospace',scrollbar:{vertical:'auto',horizontal:'auto'},overviewRulerLanes:0,hideCursorInOverviewRuler:true,overviewRulerBorder:false,renderLineHighlight:'none',contextmenu:false,padding:{top:12,bottom:12}});el.dataset.monaco='true';monacoEditors[el.id]=editor;}
+function langExt(lang){const m={javascript:'js',typescript:'ts',python:'py',java:'java',c:'c',cpp:'cpp',csharp:'cs',go:'go',rust:'rs',ruby:'rb',php:'php',swift:'swift',kotlin:'kt',html:'html',css:'css',json:'json',xml:'xml',yaml:'yml',sql:'sql',shell:'sh',bash:'sh',vue:'vue',jsx:'jsx',tsx:'tsx'};return m[lang.toLowerCase()]||m[lang]||'txt';}
+</script>
+</body>
+</html>
