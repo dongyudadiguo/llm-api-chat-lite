@@ -175,6 +175,55 @@ button { cursor: pointer; border: none; background: none; }
 .typing span:nth-child(3) { animation-delay: .3s; }
 @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
 
+/* ===== Streaming code block ===== */
+.streaming-cb {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.streaming-cb .cb-lang {
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.streaming-cb .cb-lang::after {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: .3; transform: scale(.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.streaming-cb pre {
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  max-height: 400px;
+}
+.streaming-cb pre::after {
+  content: '▌';
+  color: var(--accent);
+  animation: cursor-blink 1s step-end infinite;
+  margin-left: 1px;
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 .composer {
   position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
   width: min(800px, calc(100% - 24px));
@@ -630,10 +679,30 @@ function cText(p){if(p?.output&&Array.isArray(p.output)){const parts=[];for(cons
 function normC2(v){return typeof v==='string'?v:Array.isArray(v)?v.map(x=>typeof x==='string'?x:x?.text??x?.content??'').join(''):'';}
 
 // ===== Render =====
-function render(opts={}){const conv=aConv();const msgs=conv?.messages||[];U.messages.innerHTML=msgs.length?'<div class="msg-stack">'+msgs.map(vMsg).join('')+'</div>':emptyH();if(opts.scroll)U.messages.scrollTop=U.messages.scrollHeight;if(monacoReady)document.querySelectorAll('.cb').forEach(initCB);}
+function render(opts={}){
+  const conv=aConv();
+  const msgs=conv?.messages||[];
+  U.messages.innerHTML=msgs.length?'<div class="msg-stack">'+msgs.map(vMsg).join('')+'</div>':emptyH();
+  if(opts.scroll)U.messages.scrollTop=U.messages.scrollHeight;
+  // Only init Monaco for completed (non-pending) messages — avoids expensive rebuilds during streaming
+  if(monacoReady) document.querySelectorAll('.msg:not(.pending) .cb').forEach(initCB);
+}
+
 function emptyH(){return'<div class="msg-stack"><div class="empty"><h2>AI Chat Lite</h2><p>轻量、实用的 AI 对话工具。配置接口后即可开始。</p><div class="chips"><button class="chip" data-suggest="帮我总结下面这段内容：">总结内容</button><button class="chip" data-suggest="请解释这段代码：">解释代码</button><button class="chip" data-suggest="帮我写一段产品介绍文案。">生成文案</button></div></div></div>';}
-function vMsg(m){const u=m.role==='user';const cls=['msg',u?'user':'assistant',m.error?'error':''].filter(Boolean).join(' ');const pf=!u&&!m.pending&&!m.error&&m.latency!=null?`<span class="msg-pf">${m.latency}ms · ${m.speed||'0'} 字/s</span>`:'';return`<div class="${cls}"><div class="msg-hd"><span class="msg-av">${u?'U':'AI'}</span><span class="msg-nm">${u?'你':'AI'}</span>${pf}<span class="msg-tm">${fmtT(m.time)}</span></div><div class="msg-bd">${mBd(m,u)}</div></div>`;}
-function mBd(m,u){if(m.pending&&!m.content)return'<div class="typing"><span></span><span></span><span></span></div>';if(u||m.pending)return'<p>'+esc(m.content).replace(/\n/g,'<br>')+'</p>';return md(m.content);}
+
+function vMsg(m){
+  const u=m.role==='user';
+  const cls=['msg',u?'user':'assistant',m.error?'error':'',m.pending?'pending':''].filter(Boolean).join(' ');
+  const pf=!u&&!m.pending&&!m.error&&m.latency!=null?`<span class="msg-pf">${m.latency}ms · ${m.speed||'0'} 字/s</span>`:'';
+  return`<div class="${cls}"><div class="msg-hd"><span class="msg-av">${u?'U':'AI'}</span><span class="msg-nm">${u?'你':'AI'}</span>${pf}<span class="msg-tm">${fmtT(m.time)}</span></div><div class="msg-bd">${mBd(m,u)}</div></div>`;
+}
+
+// KEY FIX: always use md() for assistant messages, even during streaming
+function mBd(m,u){
+  if(m.pending&&!m.content) return '<div class="typing"><span></span><span></span><span></span></div>';
+  if(u) return '<p>'+esc(m.content).replace(/\n/g,'<br>')+'</p>';
+  return md(m.content);
+}
 
 // ===== Markdown =====
 function md(t){
@@ -642,7 +711,7 @@ function md(t){
     if(raw[i].match(/^```/)){
       const lang=raw[i].slice(3).trim();const lines=[];i++;
       while(i<raw.length&&!raw[i].match(/^```/)){lines.push(raw[i]);i++;}
-      i++;
+      if(i<raw.length)i++; // skip closing ``` only if it exists
       const src=lines.join('\n').replace(/^\n+|\n+$/g,'');
       const ls=/^[a-zA-Z0-9_+#.-]{1,24}$/.test(lang)?lang:'';
       out.push(`<pre class="cb"><code>${ls?'<b>'+esc(ls)+'</b>\n':''}${esc(src)}</code></pre>`);continue;
@@ -762,10 +831,110 @@ async function applyCD(data,gid){applyingCloud=true;try{if(data.settings){write(
 require.config({paths:{vs:'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'}});
 require(['vs/editor/editor.main'],function(){
   monaco.editor.defineTheme('chat-dark',{base:'vs-dark',inherit:true,rules:[],colors:{'editor.background':'#09090b','editor.lineHighlightBackground':'#09090b'}});
-  monacoReady=true;document.querySelectorAll('.cb').forEach(initCB);
+  monacoReady=true;
+  // Only init Monaco for non-pending messages
+  document.querySelectorAll('.msg:not(.pending) .cb').forEach(initCB);
 });
-function initCB(el){if(el.dataset.monaco)return;const code=el.querySelector('code');if(!code)return;const text=code.textContent.replace(/^[^\n]*\n/,'');const langLine=code.querySelector('b');const lang=langLine?langLine.textContent.trim():'plaintext';el.dataset.monaco='pending';el.innerHTML='';el.style.position='relative';el.style.padding='0';const toolbar=document.createElement('div');toolbar.style.cssText='position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:10;';const copyBtn=document.createElement('button');copyBtn.className='btn';copyBtn.style.cssText='padding:3px 10px;font-size:11px;';copyBtn.textContent='复制';copyBtn.onclick=()=>{navigator.clipboard.writeText(text);copyBtn.textContent='已复制';setTimeout(()=>copyBtn.textContent='复制',1500);};const downBtn=document.createElement('button');downBtn.className='btn';downBtn.style.cssText='padding:3px 10px;font-size:11px;';downBtn.textContent='下载';const ext=langExt(lang);downBtn.onclick=()=>{const blob=new Blob([text],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`code.${ext}`;a.click();URL.revokeObjectURL(a.href);};toolbar.appendChild(copyBtn);toolbar.appendChild(downBtn);el.appendChild(toolbar);const editorEl=document.createElement('div');editorEl.style.cssText='height:'+Math.min(text.split('\n').length*18+32,400)+'px;';el.appendChild(editorEl);const editor=monaco.editor.create(editorEl,{value:text,language:lang,theme:'chat-dark',readOnly:true,minimap:{enabled:false},scrollBeyondLastLine:false,lineNumbers:'off',folding:false,wordWrap:'on',fontSize:13,fontFamily:'IBM Plex Mono,Menlo,monospace',scrollbar:{vertical:'auto',horizontal:'auto'},overviewRulerLanes:0,hideCursorInOverviewRuler:true,overviewRulerBorder:false,renderLineHighlight:'none',contextmenu:false,padding:{top:12,bottom:12}});el.dataset.monaco='true';monacoEditors[el.id]=editor;}
-function langExt(lang){const m={javascript:'js',typescript:'ts',python:'py',java:'java',c:'c',cpp:'cpp',csharp:'cs',go:'go',rust:'rs',ruby:'rb',php:'php',swift:'swift',kotlin:'kt',html:'html',css:'css',json:'json',xml:'xml',yaml:'yml',sql:'sql',shell:'sh',bash:'sh',vue:'vue',jsx:'jsx',tsx:'tsx'};return m[lang.toLowerCase()]||m[lang]||'txt';}
+
+function initCB(el){
+  if(el.dataset.monaco) return;
+  const code=el.querySelector('code');
+  if(!code) return;
+
+  // Check if parent message is still streaming
+  const msg=el.closest('.msg');
+  const isStreaming=msg&&msg.classList.contains('pending');
+
+  const text=code.textContent.replace(/^[^\n]*\n/,'');
+  const langLine=code.querySelector('b');
+  const lang=langLine?langLine.textContent.trim():'plaintext';
+
+  el.dataset.monaco=isStreaming?'streaming':'done';
+  el.innerHTML='';
+  el.style.position='relative';
+  el.style.padding='0';
+
+  // Toolbar
+  const toolbar=document.createElement('div');
+  toolbar.style.cssText='position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:10;';
+
+  const copyBtn=document.createElement('button');
+  copyBtn.className='btn';
+  copyBtn.style.cssText='padding:3px 10px;font-size:11px;';
+  copyBtn.textContent='复制';
+  copyBtn.onclick=()=>{
+    navigator.clipboard.writeText(text);
+    copyBtn.textContent='已复制';
+    setTimeout(()=>copyBtn.textContent='复制',1500);
+  };
+  toolbar.appendChild(copyBtn);
+
+  if(!isStreaming){
+    const downBtn=document.createElement('button');
+    downBtn.className='btn';
+    downBtn.style.cssText='padding:3px 10px;font-size:11px;';
+    downBtn.textContent='下载';
+    const ext=langExt(lang);
+    downBtn.onclick=()=>{
+      const blob=new Blob([text],{type:'text/plain'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=`code.${ext}`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+    toolbar.appendChild(downBtn);
+  }
+
+  el.appendChild(toolbar);
+
+  if(isStreaming){
+    // Lightweight styled pre for streaming — no Monaco overhead
+    const wrapper=document.createElement('div');
+    wrapper.className='streaming-cb';
+    if(lang&&lang!=='plaintext'){
+      const header=document.createElement('div');
+      header.className='cb-lang';
+      header.textContent=lang;
+      wrapper.appendChild(header);
+    }
+    const pre=document.createElement('pre');
+    pre.textContent=text;
+    wrapper.appendChild(pre);
+    el.appendChild(wrapper);
+  } else {
+    // Full Monaco editor for completed messages
+    const editorEl=document.createElement('div');
+    editorEl.style.cssText='height:'+Math.min(text.split('\n').length*18+32,400)+'px;';
+    el.appendChild(editorEl);
+    const editor=monaco.editor.create(editorEl,{
+      value:text,
+      language:lang,
+      theme:'chat-dark',
+      readOnly:true,
+      minimap:{enabled:false},
+      scrollBeyondLastLine:false,
+      lineNumbers:'off',
+      folding:false,
+      wordWrap:'on',
+      fontSize:13,
+      fontFamily:'IBM Plex Mono,Menlo,monospace',
+      scrollbar:{vertical:'auto',horizontal:'auto'},
+      overviewRulerLanes:0,
+      hideCursorInOverviewRuler:true,
+      overviewRulerBorder:false,
+      renderLineHighlight:'none',
+      contextmenu:false,
+      padding:{top:12,bottom:12}
+    });
+    monacoEditors[el.id]=editor;
+  }
+}
+
+function langExt(lang){
+  const m={javascript:'js',typescript:'ts',python:'py',java:'java',c:'c',cpp:'cpp',csharp:'cs',go:'go',rust:'rs',ruby:'rb',php:'php',swift:'swift',kotlin:'kt',html:'html',css:'css',json:'json',xml:'xml',yaml:'yml',sql:'sql',shell:'sh',bash:'sh',vue:'vue',jsx:'jsx',tsx:'tsx'};
+  return m[lang.toLowerCase()]||m[lang]||'txt';
+}
 </script>
 </body>
 </html>
