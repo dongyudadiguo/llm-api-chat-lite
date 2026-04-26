@@ -509,7 +509,7 @@ function bind(){
   U.closeSyncBtn.addEventListener('click',()=>showM('syncMask',false));
   U.closeSyncBtn2.addEventListener('click',()=>showM('syncMask',false));
   U.syncMask.addEventListener('mousedown',e=>{if(e.target===U.syncMask)showM('syncMask',false);});
-  U.githubToken.addEventListener('change',()=>{S.sync.githubToken=U.githubToken.value.trim();persistSy();});
+  U.githubToken.addEventListener('input',()=>{S.sync.githubToken=U.githubToken.value.trim();persistSy();});
   U.copyGistIdBtn.addEventListener('click',copyGistId);
   U.uploadBtn.addEventListener('click',upload);
   U.downloadBtn.addEventListener('click',download);
