@@ -456,6 +456,7 @@ const IS=initS(read(K.s,null));
 const S={profiles:IS.profiles,activeProfileId:IS.activeProfileId,s:null,conversations:normC(read(K.c,[])),activeConvId:null,ctl:null,sync:read(K.y,{githubToken:'',gistId:'',syncedAt:null,autoSync:false,lastLocalUpdate:null}),syncTimer:null,syncing:false};
 let isBottom=true;
 let applyingCloud=false;
+let initializing=false;
 
 const U={
   messages:$('#messages'),form:$('#form'),prompt:$('#prompt'),send:$('#sendBtn'),status:$('#status'),
@@ -475,11 +476,14 @@ const U={
 init();
 
 function init(){
+  initializing=true;
   ensureP();persistS();fill();bind();ensureC();renderConv();render();refresh();resize();
+  initializing=false;
   setTimeout(()=>{const el=U.messages;isBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80;},100);
   if(!S.s.apiKey||!S.s.baseUrl||!S.s.model)st('请先配置接口');
   U.githubToken.value=S.sync.githubToken||'';
   updateSy();
+  initAS();
 }
 
 function bind(){
@@ -518,7 +522,6 @@ function bind(){
   U.closeGistListBtn.addEventListener('click',()=>showM('gistListMask',false));
   U.gistListMask.addEventListener('mousedown',e=>{if(e.target===U.gistListMask)showM('gistListMask',false);});
   U.autoSync.addEventListener('change',toggleAS);
-  initAS();
 }
 
 function showM(id,v){document.getElementById(id).classList.toggle('hidden',!v);}
@@ -747,7 +750,7 @@ async function dlById(gid,token){
 
 function initAS(){U.autoSync.checked=!!S.sync.autoSync;if(S.sync.autoSync&&S.sync.githubToken&&S.sync.gistId)setTimeout(()=>autoCheck(),1000);}
 function toggleAS(){S.sync.autoSync=U.autoSync.checked;persistSy();if(S.sync.autoSync&&S.sync.githubToken&&S.sync.gistId)autoCheck();}
-function markLU(){S.sync.lastLocalUpdate=new Date().toISOString();persistSy();if(!applyingCloud&&S.sync.autoSync&&S.sync.githubToken)scheduleAU();}
+function markLU(){if(initializing)return;S.sync.lastLocalUpdate=new Date().toISOString();persistSy();if(!applyingCloud&&S.sync.autoSync&&S.sync.githubToken)scheduleAU();}
 function scheduleAU(){if(S.syncTimer)clearTimeout(S.syncTimer);S.syncTimer=setTimeout(()=>{if(!S.syncing&&S.sync.autoSync&&S.sync.githubToken)autoUp();},3000);}
 async function autoCheck(){if(!S.sync.githubToken||!S.sync.gistId||S.syncing)return;S.syncing=true;try{const res=await fetch(`https://api.github.com/gists/${S.sync.gistId}`,{headers:{Authorization:`token ${S.sync.githubToken}`,Accept:'application/vnd.github.v3+json'}});if(!res.ok)return;const gist=await res.json();const file=gist.files?.['ai-chat-lite-data.json'];if(!file?.content)return;const cd=JSON.parse(file.content);const ct=cd.syncedAt?new Date(cd.syncedAt).getTime():0;const ls=S.sync.syncedAt?new Date(S.sync.syncedAt).getTime():0;const lu=S.sync.lastLocalUpdate?new Date(S.sync.lastLocalUpdate).getTime():0;if(ct>ls&&ct>lu)await applyCD(cd,gist.id);else if(lu>ls)await autoUp();}catch{}finally{S.syncing=false;}}
 async function autoUp(){if(!S.sync.githubToken||S.syncing)return;S.syncing=true;try{const data={version:SV,syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};const gid=S.sync.gistId;const url=gid?`https://api.github.com/gists/${gid}`:'https://api.github.com/gists';const res=await fetch(url,{method:gid?'PATCH':'POST',headers:{Authorization:`token ${S.sync.githubToken}`,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Backup',public:false,files:{'ai-chat-lite-data.json':{content:JSON.stringify(data,null,2)}}})});if(!res.ok)return;const r=await res.json();if(!gid)S.sync.gistId=r.id;S.sync.syncedAt=new Date().toISOString();persistSy();updateSy();}catch{}finally{S.syncing=false;}}
