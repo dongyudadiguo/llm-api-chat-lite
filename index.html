@@ -175,7 +175,6 @@ button { cursor: pointer; border: none; background: none; }
 .typing span:nth-child(3) { animation-delay: .3s; }
 @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
 
-/* ===== Streaming code block ===== */
 .streaming-cb {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -270,7 +269,6 @@ button { cursor: pointer; border: none; background: none; }
 .btn-send.stop { background: var(--danger); }
 .btn-send.stop:hover { background: #dc2626; }
 
-/* ===== Markdown ===== */
 .msg-bd p,.msg-bd ul,.msg-bd ol,.msg-bd h1,.msg-bd h2,.msg-bd h3,.msg-bd blockquote,.msg-bd pre,.msg-bd table { margin: 0 0 10px; }
 .msg-bd > :last-child { margin-bottom: 0; }
 .msg-bd ul,.msg-bd ol { padding-left: 20px; }
@@ -281,7 +279,6 @@ button { cursor: pointer; border: none; background: none; }
 .ci { padding: 1px 5px; border-radius: 4px; background: var(--bg); font-size: .88em; }
 .msg-bd a { color: var(--accent); }
 
-/* ===== Table ===== */
 .msg-bd table {
   width: 100%; border-collapse: collapse;
   font-size: 13px; line-height: 1.6;
@@ -302,7 +299,6 @@ button { cursor: pointer; border: none; background: none; }
   background: rgba(255,255,255,.02);
 }
 
-/* ===== Modal ===== */
 .mm {
   position: fixed; inset: 0; z-index: 200;
   background: rgba(0,0,0,.5); backdrop-filter: blur(2px);
@@ -549,11 +545,17 @@ function bind(){
   U.deleteProfileBtn.addEventListener('click',deleteP);
   U.mask.addEventListener('mousedown',e=>{if(e.target===U.mask)showM('mask',false);});
   U.messages.addEventListener('click',e=>{const t=e.target.closest('[data-suggest]');if(t){U.prompt.value=t.dataset.suggest||'';resize();U.prompt.focus();}});
+
+  // ===== FIX 1: scroll handler 增加空对话保护 =====
   U.messages.addEventListener('scroll',()=>{
-    const el=U.messages;isBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80;
-    if(isBottom||S.ctl)U.form.classList.remove('hidden');
+    const el=U.messages;
+    isBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80;
+    const conv=aConv();
+    const isEmpty=!conv||conv.messages.filter(x=>!x.pending).length===0;
+    if(isBottom||S.ctl||isEmpty)U.form.classList.remove('hidden');
     else if(!U.prompt.value.trim()&&document.activeElement!==U.prompt)U.form.classList.add('hidden');
   });
+
   U.prompt.addEventListener('focus',()=>U.form.classList.remove('hidden'));
   U.menuBtn.addEventListener('click',()=>U.sidebar.classList.toggle('open'));
   U.closeSidebarBtn.addEventListener('click',()=>U.sidebar.classList.remove('open'));
@@ -589,8 +591,39 @@ function mId(){return 'm_'+Date.now().toString(36)+Math.random().toString(36).sl
 function mkMsg(role,content,extra={}){return{id:mId(),role,content,time:new Date().toISOString(),pending:false,error:false,latency:null,speed:null,...extra};}
 function ensureC(){if(!S.conversations.length){const c=mkConv();S.conversations.push(c);S.activeConvId=c.id;persistC();}if(!S.activeConvId||!S.conversations.find(x=>x.id===S.activeConvId))S.activeConvId=S.conversations[0]?.id;}
 function mkConv(){return{id:cId(),title:'新对话',messages:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),titleGenerated:false};}
-function newConv(){if(S.ctl)S.ctl.abort();S.ctl=null;const c=mkConv();S.conversations.unshift(c);S.activeConvId=c.id;persistC();renderConv();render();refresh();st('新对话已创建');U.prompt.focus();}
-function selConv(id){if(id===S.activeConvId)return;if(S.ctl)S.ctl.abort();S.ctl=null;S.activeConvId=id;persistC();renderConv();render();refresh();U.prompt.focus();}
+
+// ===== FIX 2: newConv 滚动到底 + 显式显示输入框 =====
+function newConv(){
+  if(S.ctl)S.ctl.abort();
+  S.ctl=null;
+  const c=mkConv();
+  S.conversations.unshift(c);
+  S.activeConvId=c.id;
+  persistC();
+  renderConv();
+  render();
+  refresh();
+  st('新对话已创建');
+  U.messages.scrollTop=U.messages.scrollHeight;
+  U.form.classList.remove('hidden');
+  U.prompt.focus();
+}
+
+// ===== FIX 3: selConv 滚动到底 + 显式显示输入框 =====
+function selConv(id){
+  if(id===S.activeConvId)return;
+  if(S.ctl)S.ctl.abort();
+  S.ctl=null;
+  S.activeConvId=id;
+  persistC();
+  renderConv();
+  render();
+  refresh();
+  U.messages.scrollTop=U.messages.scrollHeight;
+  U.form.classList.remove('hidden');
+  U.prompt.focus();
+}
+
 function delConv(id){if(S.conversations.length<=1){st('至少保留一个对话');return;}const c=S.conversations.find(x=>x.id===id);if(!confirm(`删除「${c?.title||''}」？`))return;const i=S.conversations.findIndex(x=>x.id===id);S.conversations.splice(i,1);if(id===S.activeConvId)S.activeConvId=(S.conversations[i]||S.conversations[i-1]||S.conversations[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistC();renderConv();render();refresh();}
 function renameConv(id){const c=S.conversations.find(x=>x.id===id);if(!c)return;const t=prompt('新标题：',c.title);if(t===null||!t.trim())return;c.title=t.trim();c.updatedAt=new Date().toISOString();persistC();renderConv();}
 function aConv(){return S.conversations.find(x=>x.id===S.activeConvId);}
@@ -626,26 +659,55 @@ async function submit(e){e.preventDefault();if(S.ctl){S.ctl.abort();return;}cons
 
 async function reply(mid){const conv=aConv();if(!conv)return;const ai=conv.messages.find(x=>x.id===mid);if(!ai)return;S.ctl=new AbortController();refresh();st('正在生成...');const t0=Date.now();const url=ep(S.s.baseUrl);let body;if(S.s.wireApi==='responses')body={model:S.s.model,input:apiMsgs(conv),stream:S.s.stream};else body={model:S.s.model,messages:apiMsgs(conv),temperature:S.s.temperature,stream:S.s.stream};const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});if(!res.ok){const errBody=await res.text();throw new Error(errBody||('HTTP '+res.status));}const ct=res.headers.get('content-type')||'';let fc=null;if(/event-stream/i.test(ct)&&res.body){await rStream(res,chunk=>{if(fc===null){fc=Date.now();ai.latency=fc-t0;}ai.content+=chunk;render();});}else{fc=Date.now();const raw=await res.text();try{const json=JSON.parse(raw);ai.content=cText(json)||'接口返回为空';}catch(e){ai.content=raw||'接口返回为空';}ai.latency=fc-t0;}const dur=(Date.now()-t0)/1000;if(dur>0&&ai.content&&ai.content!=='接口返回为空')ai.speed=(ai.content.length/dur).toFixed(1);ai.pending=false;ai.error=false;if(!ai.content.trim())ai.content='接口返回为空';st('完成');}
 
-async function genTitle(conv){if(!S.s.baseUrl||!S.s.apiKey||!S.s.model)return;try{const um=conv.messages.filter(x=>x.role==='user').slice(0,2).map(x=>x.content).join('\n');const url=epChat(S.s.baseUrl);const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify({model:S.s.model,messages:[{role:'system',content:'用不超过15个字概括对话主题，只输出标题'},{role:'user',content:um}],temperature:.7,max_tokens:30})});if(!res.ok)return;const json=await res.json();const title=cText(json)?.trim();if(title){conv.title=title.slice(0,20);conv.titleGenerated=true;conv.updatedAt=new Date().toISOString();persistC();renderConv();}}catch{}}
+async function genTitle(conv){
+  if(!S.s.baseUrl||!S.s.apiKey||!S.s.model)return;
+  try{
+    const um=conv.messages.filter(x=>x.role==='user').slice(0,2).map(x=>x.content).join('\n');
+    const url=ep(S.s.baseUrl);
+    const msgs=[
+      {role:'system',content:'用不超过15个字概括对话主题，只输出标题'},
+      {role:'user',content:um}
+    ];
+    let body;
+    if(S.s.wireApi==='responses'){
+      body={model:S.s.model,input:msgs,stream:false};
+    }else{
+      body={model:S.s.model,messages:msgs,temperature:.7,max_tokens:30,stream:false};
+    }
+    const res=await fetch(url,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},
+      body:JSON.stringify(body)
+    });
+    if(!res.ok){console.warn('标题生成 HTTP 错误:',res.status);return;}
+    const json=await res.json();
+    const title=cText(json)?.trim();
+    if(title){
+      conv.title=title.slice(0,20);
+      conv.titleGenerated=true;
+      conv.updatedAt=new Date().toISOString();
+      persistC();
+      renderConv();
+    }
+  }catch(e){
+    console.warn('标题生成失败:',e);
+  }
+}
 
 function apiMsgs(conv){const out=[];const sys=sysPrompt();if(sys)out.push({role:'system',content:sys});conv.messages.forEach(x=>!x.pending&&out.push({role:x.role,content:x.content}));return out;}
 function sysPrompt(){return[S.s.systemPrompt?.trim(),S.s.thinking?'当前为思考模式。请先分析问题、拆解步骤，再给出清晰的最终答案。':'当前为非思考模式。请直接给出简洁明确的答案。'].filter(Boolean).join('\n\n');}
 
 function ep(u){const c=String(u||'').trim().replace(/\/+$/,'');if(!c)return'';const r=S.s.wireApi==='responses';if(r){if(/\/responses$/i.test(c))return c;if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/responses';return c+'/v1/responses';}if(/\/chat\/completions$/i.test(c))return c;if(/\/responses$/i.test(c))return c.replace(/\/responses$/i,'/chat/completions');if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions';}
-function epChat(u){const c=String(u||'').trim().replace(/\/+$/,'');if(!c)return'';if(/\/chat\/completions$/i.test(c))return c;if(/\/responses$/i.test(c))return c.replace(/\/responses$/i,'/chat/completions');if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions';}
 
-// ===== 流式读取：逐块解析，实时渲染 =====
 async function rStream(res, cb) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
-
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buf += dec.decode(value, { stream: true });
     buf = buf.replace(/\r\n/g, '\n');
-
     let idx;
     while ((idx = buf.indexOf('\n\n')) !== -1) {
       const event = buf.slice(0, idx);
@@ -653,7 +715,6 @@ async function rStream(res, cb) {
       processSSE(event, cb);
     }
   }
-
   if (buf.trim()) processSSE(buf, cb);
 }
 
@@ -664,17 +725,13 @@ function processSSE(event, cb) {
     if (!t || t === '[DONE]') continue;
     try {
       const json = JSON.parse(t);
-      if (json.type === 'response.output_text.delta' && json.delta) {
-        cb(json.delta); continue;
-      }
+      if (json.type === 'response.output_text.delta' && json.delta) { cb(json.delta); continue; }
       const d = cText(json);
       if (d) cb(d);
     } catch {}
   }
 }
 
-function extRT(json){
-  if(json?.output&&Array.isArray(json.output)){for(const item of json.output){if(item.content&&Array.isArray(item.content)){for(const c of item.content){if(c.type==='output_text'&&c.text)return c.text;if(c.type==='text'&&c.text)return c.text;if(typeof c.text==='string'&&c.text)return c.text;}}if(typeof item.text==='string')return item.text;}}if(json?.type==='response.output_text.delta'&&json?.delta)return json.delta;if(json?.delta?.text)return json.delta.text;return'';}
 function cText(p){if(p?.output&&Array.isArray(p.output)){const parts=[];for(const item of p.output){if(item.content&&Array.isArray(item.content)){for(const c of item.content){if(c.type==='output_text'&&c.text)parts.push(c.text);else if(typeof c.text==='string'&&c.text)parts.push(c.text);}}if(typeof item.text==='string')parts.push(item.text);}if(parts.length)return parts.join('');}const c=p?.choices?.[0];return normC2(c?.delta?.content??c?.message?.content);}
 function normC2(v){return typeof v==='string'?v:Array.isArray(v)?v.map(x=>typeof x==='string'?x:x?.text??x?.content??'').join(''):'';}
 
@@ -684,7 +741,6 @@ function render(opts={}){
   const msgs=conv?.messages||[];
   U.messages.innerHTML=msgs.length?'<div class="msg-stack">'+msgs.map(vMsg).join('')+'</div>':emptyH();
   if(opts.scroll)U.messages.scrollTop=U.messages.scrollHeight;
-  // Only init Monaco for completed (non-pending) messages — avoids expensive rebuilds during streaming
   if(monacoReady) document.querySelectorAll('.msg:not(.pending) .cb').forEach(initCB);
 }
 
@@ -697,7 +753,6 @@ function vMsg(m){
   return`<div class="${cls}"><div class="msg-hd"><span class="msg-av">${u?'U':'AI'}</span><span class="msg-nm">${u?'你':'AI'}</span>${pf}<span class="msg-tm">${fmtT(m.time)}</span></div><div class="msg-bd">${mBd(m,u)}</div></div>`;
 }
 
-// KEY FIX: always use md() for assistant messages, even during streaming
 function mBd(m,u){
   if(m.pending&&!m.content) return '<div class="typing"><span></span><span></span><span></span></div>';
   if(u) return '<p>'+esc(m.content).replace(/\n/g,'<br>')+'</p>';
@@ -711,7 +766,7 @@ function md(t){
     if(raw[i].match(/^```/)){
       const lang=raw[i].slice(3).trim();const lines=[];i++;
       while(i<raw.length&&!raw[i].match(/^```/)){lines.push(raw[i]);i++;}
-      if(i<raw.length)i++; // skip closing ``` only if it exists
+      if(i<raw.length)i++;
       const src=lines.join('\n').replace(/^\n+|\n+$/g,'');
       const ls=/^[a-zA-Z0-9_+#.-]{1,24}$/.test(lang)?lang:'';
       out.push(`<pre class="cb"><code>${ls?'<b>'+esc(ls)+'</b>\n':''}${esc(src)}</code></pre>`);continue;
@@ -722,9 +777,7 @@ function md(t){
   }
   return out.join('')||'<p></p>';
 }
-
 function isTbl(l){const s=(l||'').trim();return/^\|.+\|$/.test(s);}
-
 function bldTbl(lines){
   const rows=lines.map(l=>{const s=l.trim().replace(/^\|/,'').replace(/\|$/,'');return s.split('|').map(c=>c.trim());});
   let sepIdx=-1;for(let i=0;i<rows.length;i++){if(rows[i].every(c=>/^[-:]+$/.test(c))){sepIdx=i;break;}}
@@ -736,7 +789,6 @@ function bldTbl(lines){
   if(br.length){html+='<tbody>';br.forEach(r=>{if(r.length===1&&!r[0])return;html+='<tr>';r.forEach((c,ci)=>{const a=aligns[ci]?` style="text-align:${aligns[ci]}"`:'';html+=`<td${a}>${inline(c)}</td>`;});html+='</tr>';});html+='</tbody>';}
   return html+'</table>';
 }
-
 function tB(t){
   const out=[],lines=String(t||'').replace(/\r/g,'').split('\n');let list='',quote=[];
   const fl=()=>{if(list){out.push(`</${list}>`);list='';}};const fq=()=>{if(quote.length){out.push('<blockquote>'+quote.map(inline).join('<br>')+'</blockquote>');quote=[];}};
@@ -756,40 +808,28 @@ function copyGistId(){if(!S.sync.gistId)return st('无 Gist ID');navigator.clipb
 async function upload(){
   const token=U.githubToken.value.trim()||S.sync.githubToken;
   if(!token){st('请填写 Token');return;}
-  S.sync.githubToken=token;
-  U.githubToken.value=token;
-  persistSy();
-  st('正在上传...');
-  U.uploadBtn.disabled=true;
+  S.sync.githubToken=token;U.githubToken.value=token;persistSy();
+  st('正在上传...');U.uploadBtn.disabled=true;
   try{
     const data={version:SV,syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};
-    const gid=S.sync.gistId;
-    const url=gid?`https://api.github.com/gists/${gid}`:'https://api.github.com/gists';
+    const gid=S.sync.gistId;const url=gid?`https://api.github.com/gists/${gid}`:'https://api.github.com/gists';
     const res=await fetch(url,{method:gid?'PATCH':'POST',headers:{Authorization:`token ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Backup',public:false,files:{'ai-chat-lite-data.json':{content:JSON.stringify(data,null,2)}}})});
     if(!res.ok){const e=await res.json();throw new Error(e.message||`HTTP ${res.status}`);}
-    const r=await res.json();
-    if(!gid)S.sync.gistId=r.id;
-    S.sync.syncedAt=new Date().toISOString();
-    persistSy();
-    updateSy();
-    st('上传成功');
+    const r=await res.json();if(!gid)S.sync.gistId=r.id;
+    S.sync.syncedAt=new Date().toISOString();persistSy();updateSy();st('上传成功');
   }catch(e){st(`上传失败：${e.message}`);}
   finally{U.uploadBtn.disabled=false;}
 }
 async function download(){
   const token=U.githubToken.value.trim()||S.sync.githubToken;
   if(!token){st('请填写 Token');return;}
-  S.sync.githubToken=token;
-  U.githubToken.value=token;
-  persistSy();
+  S.sync.githubToken=token;U.githubToken.value=token;persistSy();
   if(S.sync.gistId){await dlById(S.sync.gistId,token);return;}
-  st('正在获取列表...');
-  U.downloadBtn.disabled=true;
+  st('正在获取列表...');U.downloadBtn.disabled=true;
   try{
     const res=await fetch('https://api.github.com/gists',{headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json'}});
     if(!res.ok)throw new Error(`HTTP ${res.status}`);
-    const gists=await res.json();
-    const cg=gists.filter(g=>g.files?.['ai-chat-lite-data.json']);
+    const gists=await res.json();const cg=gists.filter(g=>g.files?.['ai-chat-lite-data.json']);
     if(!cg.length){st('无备份');return;}
     U.gistList.innerHTML=cg.map(g=>`<div class="conv-item" data-gist-id="${esc(g.id)}"><div class="title">${esc(g.description||'AI Chat Lite 备份')}</div><div class="meta"><span>${fmtSy(g.updated_at||g.created_at)}</span></div></div>`).join('');
     U.gistList.onclick=async e=>{const item=e.target.closest('.conv-item');if(item){showM('gistListMask',false);await dlById(item.dataset.gistId,token);}};
@@ -802,18 +842,13 @@ async function dlById(gid,token){
   try{
     const res=await fetch(`https://api.github.com/gists/${gid}`,{headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json'}});
     if(!res.ok)throw new Error(`HTTP ${res.status}`);
-    const gist=await res.json();
-    const file=gist.files?.['ai-chat-lite-data.json'];
+    const gist=await res.json();const file=gist.files?.['ai-chat-lite-data.json'];
     if(!file?.content)throw new Error('文件为空');
     const data=JSON.parse(file.content);
     if(!confirm('覆盖本地数据？'))return;
     if(data.settings){write(K.s,data.settings);S.profiles=initS(data.settings).profiles;S.activeProfileId=initS(data.settings).activeProfileId;S.s=null;ensureP();persistS();fill();refresh();}
     if(data.conversations){write(K.c,data.conversations);S.conversations=normC(data.conversations);S.activeConvId=null;ensureC();persistC();renderConv();render();}
-    S.sync.gistId=gid;
-    S.sync.syncedAt=new Date().toISOString();
-    persistSy();
-    updateSy();
-    st('恢复成功');
+    S.sync.gistId=gid;S.sync.syncedAt=new Date().toISOString();persistSy();updateSy();st('恢复成功');
   }catch(e){st(`下载失败：${e.message}`);}
 }
 
@@ -832,7 +867,6 @@ require.config({paths:{vs:'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min
 require(['vs/editor/editor.main'],function(){
   monaco.editor.defineTheme('chat-dark',{base:'vs-dark',inherit:true,rules:[],colors:{'editor.background':'#09090b','editor.lineHighlightBackground':'#09090b'}});
   monacoReady=true;
-  // Only init Monaco for non-pending messages
   document.querySelectorAll('.msg:not(.pending) .cb').forEach(initCB);
 });
 
@@ -840,33 +874,23 @@ function initCB(el){
   if(el.dataset.monaco) return;
   const code=el.querySelector('code');
   if(!code) return;
-
-  // Check if parent message is still streaming
   const msg=el.closest('.msg');
   const isStreaming=msg&&msg.classList.contains('pending');
-
   const text=code.textContent.replace(/^[^\n]*\n/,'');
   const langLine=code.querySelector('b');
   const lang=langLine?langLine.textContent.trim():'plaintext';
-
   el.dataset.monaco=isStreaming?'streaming':'done';
   el.innerHTML='';
   el.style.position='relative';
   el.style.padding='0';
 
-  // Toolbar
   const toolbar=document.createElement('div');
   toolbar.style.cssText='position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:10;';
-
   const copyBtn=document.createElement('button');
   copyBtn.className='btn';
   copyBtn.style.cssText='padding:3px 10px;font-size:11px;';
   copyBtn.textContent='复制';
-  copyBtn.onclick=()=>{
-    navigator.clipboard.writeText(text);
-    copyBtn.textContent='已复制';
-    setTimeout(()=>copyBtn.textContent='复制',1500);
-  };
+  copyBtn.onclick=()=>{navigator.clipboard.writeText(text);copyBtn.textContent='已复制';setTimeout(()=>copyBtn.textContent='复制',1500);};
   toolbar.appendChild(copyBtn);
 
   if(!isStreaming){
@@ -875,57 +899,32 @@ function initCB(el){
     downBtn.style.cssText='padding:3px 10px;font-size:11px;';
     downBtn.textContent='下载';
     const ext=langExt(lang);
-    downBtn.onclick=()=>{
-      const blob=new Blob([text],{type:'text/plain'});
-      const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download=`code.${ext}`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    };
+    downBtn.onclick=()=>{const blob=new Blob([text],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`code.${ext}`;a.click();URL.revokeObjectURL(a.href);};
     toolbar.appendChild(downBtn);
   }
-
   el.appendChild(toolbar);
 
   if(isStreaming){
-    // Lightweight styled pre for streaming — no Monaco overhead
     const wrapper=document.createElement('div');
     wrapper.className='streaming-cb';
-    if(lang&&lang!=='plaintext'){
-      const header=document.createElement('div');
-      header.className='cb-lang';
-      header.textContent=lang;
-      wrapper.appendChild(header);
-    }
+    if(lang&&lang!=='plaintext'){const header=document.createElement('div');header.className='cb-lang';header.textContent=lang;wrapper.appendChild(header);}
     const pre=document.createElement('pre');
     pre.textContent=text;
     wrapper.appendChild(pre);
     el.appendChild(wrapper);
   } else {
-    // Full Monaco editor for completed messages
     const editorEl=document.createElement('div');
     editorEl.style.cssText='height:'+Math.min(text.split('\n').length*18+32,400)+'px;';
     el.appendChild(editorEl);
     const editor=monaco.editor.create(editorEl,{
-      value:text,
-      language:lang,
-      theme:'chat-dark',
-      readOnly:true,
-      minimap:{enabled:false},
-      scrollBeyondLastLine:false,
-      lineNumbers:'off',
-      folding:false,
-      wordWrap:'on',
-      fontSize:13,
+      value:text,language:lang,theme:'chat-dark',readOnly:true,
+      minimap:{enabled:false},scrollBeyondLastLine:false,lineNumbers:'off',
+      folding:false,wordWrap:'on',fontSize:13,
       fontFamily:'IBM Plex Mono,Menlo,monospace',
       scrollbar:{vertical:'auto',horizontal:'auto'},
-      overviewRulerLanes:0,
-      hideCursorInOverviewRuler:true,
-      overviewRulerBorder:false,
-      renderLineHighlight:'none',
-      contextmenu:false,
-      padding:{top:12,bottom:12}
+      overviewRulerLanes:0,hideCursorInOverviewRuler:true,
+      overviewRulerBorder:false,renderLineHighlight:'none',
+      contextmenu:false,padding:{top:12,bottom:12}
     });
     monacoEditors[el.id]=editor;
   }
