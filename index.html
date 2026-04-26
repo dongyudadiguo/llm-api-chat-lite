@@ -64,8 +64,8 @@ button { cursor: pointer; border: none; background: none; }
 .conv-item.active { background: #172554; }
 .conv-item .title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .conv-item .meta { font-size: 11px; color: var(--text-3); display: flex; justify-content: space-between; }
-.conv-item .actions { display: none; gap: 4px; margin-top: 4px; }
-.conv-item:hover .actions { display: flex; }
+.conv-item .actions { display: flex; gap: 4px; margin-top: 4px; opacity: 0; pointer-events: none; }
+.conv-item:hover .actions { opacity: 1; pointer-events: auto; }
 .conv-item .actions button {
   font-size: 11px; padding: 2px 8px; border-radius: 4px;
   background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border);
