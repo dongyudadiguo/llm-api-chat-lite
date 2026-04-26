@@ -477,6 +477,8 @@ function init(){
   ensureP();persistS();fill();bind();ensureC();renderConv();render();refresh();resize();
   setTimeout(()=>{const el=U.messages;isBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80;},100);
   if(!S.s.apiKey||!S.s.baseUrl||!S.s.model)st('请先配置接口');
+  U.githubToken.value=S.sync.githubToken||'';
+  updateSy();
 }
 
 function bind(){
@@ -491,7 +493,6 @@ function bind(){
   U.profileSelect.addEventListener('change',switchP);
   U.newProfileBtn.addEventListener('click',createP);
   U.deleteProfileBtn.addEventListener('click',deleteP);
-  // mousedown 防止拖拽松手误关
   U.mask.addEventListener('mousedown',e=>{if(e.target===U.mask)showM('mask',false);});
   U.messages.addEventListener('click',e=>{const t=e.target.closest('[data-suggest]');if(t){U.prompt.value=t.dataset.suggest||'';resize();U.prompt.focus();}});
   U.messages.addEventListener('scroll',()=>{
@@ -592,7 +593,6 @@ async function rStream(res, cb) {
     buf += dec.decode(value, { stream: true });
     buf = buf.replace(/\r\n/g, '\n');
 
-    // 按 \n\n 分割 SSE 事件，逐个处理
     let idx;
     while ((idx = buf.indexOf('\n\n')) !== -1) {
       const event = buf.slice(0, idx);
@@ -601,7 +601,6 @@ async function rStream(res, cb) {
     }
   }
 
-  // 处理剩余不完整的缓冲
   if (buf.trim()) processSSE(buf, cb);
 }
 
@@ -612,11 +611,9 @@ function processSSE(event, cb) {
     if (!t || t === '[DONE]') continue;
     try {
       const json = JSON.parse(t);
-      // Responses API 流式 delta
       if (json.type === 'response.output_text.delta' && json.delta) {
         cb(json.delta); continue;
       }
-      // Chat Completions
       const d = cText(json);
       if (d) cb(d);
     } catch {}
@@ -683,9 +680,69 @@ function persistSy(){write(K.y,{version:SV,githubToken:S.sync.githubToken,gistId
 function updateSy(){const s=S.sync.syncedAt?`上次：${fmtSy(S.sync.syncedAt)}`:'尚未同步';const g=S.sync.gistId?`ID：${S.sync.gistId.slice(0,8)}...`:'未创建';U.syncStatus.innerHTML=`<span class="tag">${s}</span><span class="tag">${g}</span>`;U.gistId.value=S.sync.gistId||'';}
 function fmtSy(v){try{const d=new Date(v),now=new Date(),diff=now-d;if(diff<6e4)return'刚刚';if(diff<36e5)return`${Math.floor(diff/6e4)} 分钟前`;if(diff<864e5)return`${Math.floor(diff/36e5)} 小时前`;return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}catch{return'未知';}}
 function copyGistId(){if(!S.sync.gistId)return st('无 Gist ID');navigator.clipboard.writeText(S.sync.gistId).then(()=>st('已复制')).catch(()=>st('复制失败'));}
-async function upload(){const token=U.githubToken.value.trim();if(!token){st('请填写 Token');return;}S.sync.githubToken=token;persistSy();st('正在上传...');U.uploadBtn.disabled=true;try{const data={version:SV,syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};const gid=S.sync.gistId;const url=gid?`https://api.github.com/gists/${gid}`:'https://api.github.com/gists';const res=await fetch(url,{method:gid?'PATCH':'POST',headers:{Authorization:`token ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Backup',public:false,files:{'ai-chat-lite-data.json':{content:JSON.stringify(data,null,2)}}})});if(!res.ok){const e=await res.json();throw new Error(e.message||`HTTP ${res.status}`);}const r=await res.json();if(!gid)S.sync.gistId=r.id;S.sync.syncedAt=new Date().toISOString();persistSy();updateSy();st('上传成功');}catch(e){st(`上传失败：${e.message}`);}finally{U.uploadBtn.disabled=false;}}
-async function download(){const token=U.githubToken.value.trim();if(!token){st('请填写 Token');return;}S.sync.githubToken=token;persistSy();if(S.sync.gistId){await dlById(S.sync.gistId,token);return;}st('正在获取列表...');U.downloadBtn.disabled=true;try{const res=await fetch('https://api.github.com/gists',{headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json'}});if(!res.ok)throw new Error(`HTTP ${res.status}`);const gists=await res.json();const cg=gists.filter(g=>g.files?.['ai-chat-lite-data.json']);if(!cg.length){st('无备份');return;}U.gistList.innerHTML=cg.map(g=>`<div class="conv-item" data-gist-id="${esc(g.id)}"><div class="title">${esc(g.description||'AI Chat Lite 备份')}</div><div class="meta"><span>${fmtSy(g.updated_at||g.created_at)}</span></div></div>`).join('');U.gistList.onclick=async e=>{const item=e.target.closest('.conv-item');if(item){showM('gistListMask',false);await dlById(item.dataset.gistId,token);}};showM('gistListMask',true);}catch(e){st(`获取失败：${e.message}`);}finally{U.downloadBtn.disabled=false;}}
-async function dlById(gid,token){st('正在下载...');try{const res=await fetch(`https://api.github.com/gists/${gid}`,{headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json'}});if(!res.ok)throw new Error(`HTTP ${res.status}`);const gist=await res.json();const file=gist.files?.['ai-chat-lite-data.json'];if(!file?.content)throw new Error('文件为空');const data=JSON.parse(file.content);if(!confirm('覆盖本地数据？'))return;if(data.settings){write(K.s,data.settings);S.profiles=initS(data.settings).profiles;S.activeProfileId=initS(data.settings).activeProfileId;S.s=null;ensureP();persistS();fill();refresh();}if(data.conversations){write(K.c,data.conversations);S.conversations=normC(data.conversations);S.activeConvId=null;ensureC();persistC();renderConv();render();}S.sync.gistId=gid;S.sync.syncedAt=new Date().toISOString();persistSy();updateSy();st('恢复成功');}catch(e){st(`下载失败：${e.message}`);}}
+async function upload(){
+  const token=U.githubToken.value.trim()||S.sync.githubToken;
+  if(!token){st('请填写 Token');return;}
+  S.sync.githubToken=token;
+  U.githubToken.value=token;
+  persistSy();
+  st('正在上传...');
+  U.uploadBtn.disabled=true;
+  try{
+    const data={version:SV,syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};
+    const gid=S.sync.gistId;
+    const url=gid?`https://api.github.com/gists/${gid}`:'https://api.github.com/gists';
+    const res=await fetch(url,{method:gid?'PATCH':'POST',headers:{Authorization:`token ${token}`,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Backup',public:false,files:{'ai-chat-lite-data.json':{content:JSON.stringify(data,null,2)}}})});
+    if(!res.ok){const e=await res.json();throw new Error(e.message||`HTTP ${res.status}`);}
+    const r=await res.json();
+    if(!gid)S.sync.gistId=r.id;
+    S.sync.syncedAt=new Date().toISOString();
+    persistSy();
+    updateSy();
+    st('上传成功');
+  }catch(e){st(`上传失败：${e.message}`);}
+  finally{U.uploadBtn.disabled=false;}
+}
+async function download(){
+  const token=U.githubToken.value.trim()||S.sync.githubToken;
+  if(!token){st('请填写 Token');return;}
+  S.sync.githubToken=token;
+  U.githubToken.value=token;
+  persistSy();
+  if(S.sync.gistId){await dlById(S.sync.gistId,token);return;}
+  st('正在获取列表...');
+  U.downloadBtn.disabled=true;
+  try{
+    const res=await fetch('https://api.github.com/gists',{headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json'}});
+    if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    const gists=await res.json();
+    const cg=gists.filter(g=>g.files?.['ai-chat-lite-data.json']);
+    if(!cg.length){st('无备份');return;}
+    U.gistList.innerHTML=cg.map(g=>`<div class="conv-item" data-gist-id="${esc(g.id)}"><div class="title">${esc(g.description||'AI Chat Lite 备份')}</div><div class="meta"><span>${fmtSy(g.updated_at||g.created_at)}</span></div></div>`).join('');
+    U.gistList.onclick=async e=>{const item=e.target.closest('.conv-item');if(item){showM('gistListMask',false);await dlById(item.dataset.gistId,token);}};
+    showM('gistListMask',true);
+  }catch(e){st(`获取失败：${e.message}`);}
+  finally{U.downloadBtn.disabled=false;}
+}
+async function dlById(gid,token){
+  st('正在下载...');
+  try{
+    const res=await fetch(`https://api.github.com/gists/${gid}`,{headers:{Authorization:`token ${token}`,Accept:'application/vnd.github.v3+json'}});
+    if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    const gist=await res.json();
+    const file=gist.files?.['ai-chat-lite-data.json'];
+    if(!file?.content)throw new Error('文件为空');
+    const data=JSON.parse(file.content);
+    if(!confirm('覆盖本地数据？'))return;
+    if(data.settings){write(K.s,data.settings);S.profiles=initS(data.settings).profiles;S.activeProfileId=initS(data.settings).activeProfileId;S.s=null;ensureP();persistS();fill();refresh();}
+    if(data.conversations){write(K.c,data.conversations);S.conversations=normC(data.conversations);S.activeConvId=null;ensureC();persistC();renderConv();render();}
+    S.sync.gistId=gid;
+    S.sync.syncedAt=new Date().toISOString();
+    persistSy();
+    updateSy();
+    st('恢复成功');
+  }catch(e){st(`下载失败：${e.message}`);}
+}
 
 function initAS(){U.autoSync.checked=!!S.sync.autoSync;if(S.sync.autoSync&&S.sync.githubToken&&S.sync.gistId)setTimeout(()=>autoCheck(),1000);}
 function toggleAS(){S.sync.autoSync=U.autoSync.checked;persistSy();if(S.sync.autoSync&&S.sync.githubToken&&S.sync.gistId)autoCheck();}
