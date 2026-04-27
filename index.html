@@ -202,6 +202,55 @@ button { cursor: pointer; border: none; background: none; }
 }
 .collapse-toggle:hover { color: var(--text); text-decoration: underline; }
 
+/* ===== Hide / Show Pairs ===== */
+.msg-hide-btn {
+  font-size: 11px;
+  color: var(--text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity .15s, color .1s, background .1s;
+}
+.msg:hover .msg-hide-btn { opacity: 1; }
+.msg-hide-btn:hover { color: var(--text-2); background: var(--surface-2); }
+
+.hidden-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.02);
+  border: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.hidden-indicator .hi-text { flex: 1; }
+.show-hidden-btn,
+.show-all-hidden-btn {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: all .1s;
+  white-space: nowrap;
+}
+.show-hidden-btn:hover,
+.show-all-hidden-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.show-all-hidden-btn { color: var(--text-3); }
+.show-all-hidden-btn:hover { color: var(--text-2); }
+
+/* ===== Typing ===== */
 .typing { display: flex; gap: 5px; align-items: center; padding-left: 28px; }
 .typing span {
   width: 5px; height: 5px; border-radius: 50%;
@@ -584,9 +633,12 @@ function bind(){
   U.newProfileBtn.addEventListener('click',createP);
   U.deleteProfileBtn.addEventListener('click',deleteP);
   U.mask.addEventListener('mousedown',e=>{if(e.target===U.mask)showM('mask',false);});
+
+  // Unified click handler for messages area
   U.messages.addEventListener('click',e=>{
     const t=e.target.closest('[data-suggest]');
     if(t){U.prompt.value=t.dataset.suggest||'';resize();U.prompt.focus();return;}
+
     const toggle=e.target.closest('.collapse-toggle');
     if(toggle){
       const bd=toggle.previousElementSibling;
@@ -594,14 +646,22 @@ function bind(){
       const msgEl=bd.closest('.msg');
       const msgId=msgEl?.dataset?.mid;
       const nowCollapsed=bd.classList.toggle('collapsed');
-      if(nowCollapsed){
-        if(msgId)expandedMsgs.delete(msgId);
-        toggle.textContent='\u5C55\u5F00\u5168\u6587';
-      }else{
-        if(msgId)expandedMsgs.add(msgId);
-        toggle.textContent='\u6536\u8D77';
-      }
+      if(nowCollapsed){if(msgId)expandedMsgs.delete(msgId);toggle.textContent='\u5C55\u5F00\u5168\u6587';}
+      else{if(msgId)expandedMsgs.add(msgId);toggle.textContent='\u6536\u8D77';}
+      return;
     }
+
+    const hideBtn=e.target.closest('[data-hide-pair]');
+    if(hideBtn){toggleHidePair(hideBtn.dataset.hidePair);return;}
+
+    const hideAsstBtn=e.target.closest('[data-hide-assistant]');
+    if(hideAsstBtn){hideFromAssistant(hideAsstBtn.dataset.hideAssistant);return;}
+
+    const showBtn=e.target.closest('.show-hidden-btn');
+    if(showBtn){showHiddenFrom(showBtn.dataset.showFrom);return;}
+
+    const showAllBtn=e.target.closest('.show-all-hidden-btn');
+    if(showAllBtn){showAllHidden();return;}
   });
 
   U.messages.addEventListener('scroll',()=>{
@@ -642,45 +702,42 @@ function convClick(e){
 
 function cId(){return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function normC(a){return Array.isArray(a)?a.filter(x=>x&&x.id&&Array.isArray(x.messages)).map(x=>({id:x.id,title:x.title||'新对话',messages:normM(x.messages),createdAt:x.createdAt||new Date().toISOString(),updatedAt:x.updatedAt||new Date().toISOString(),titleGenerated:!!x.titleGenerated})):[];}
-function normM(a){return Array.isArray(a)?a.filter(x=>x&&typeof x.role==='string'&&typeof x.content==='string').map(x=>({id:x.id||mId(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null})):[];}
+function normM(a){return Array.isArray(a)?a.filter(x=>x&&typeof x.role==='string'&&typeof x.content==='string').map(x=>({id:x.id||mId(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null,hidden:!!x.hidden})):[];}
 function mId(){return 'm_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function mkMsg(role,content,extra={}){return{id:mId(),role,content,time:new Date().toISOString(),pending:false,error:false,latency:null,speed:null,...extra};}
 function ensureC(){if(!S.conversations.length){const c=mkConv();S.conversations.push(c);S.activeConvId=c.id;persistC();}if(!S.activeConvId||!S.conversations.find(x=>x.id===S.activeConvId))S.activeConvId=S.conversations[0]?.id;}
 function mkConv(){return{id:cId(),title:'新对话',messages:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),titleGenerated:false};}
 
 function newConv(){
-  if(S.ctl)S.ctl.abort();
-  S.ctl=null;
-  const c=mkConv();
-  S.conversations.unshift(c);
-  S.activeConvId=c.id;
-  expandedMsgs.clear();
-  persistC();
-  renderConv();render();refresh();
-  st('新对话已创建');
-  U.messages.scrollTop=U.messages.scrollHeight;
-  U.form.classList.remove('hidden');
-  U.prompt.focus();
+  if(S.ctl)S.ctl.abort();S.ctl=null;
+  const c=mkConv();S.conversations.unshift(c);S.activeConvId=c.id;
+  expandedMsgs.clear();persistC();renderConv();render();refresh();
+  st('新对话已创建');U.messages.scrollTop=U.messages.scrollHeight;U.form.classList.remove('hidden');U.prompt.focus();
 }
 
 function selConv(id){
   if(id===S.activeConvId)return;
-  if(S.ctl)S.ctl.abort();
-  S.ctl=null;
-  S.activeConvId=id;
-  expandedMsgs.clear();
-  persistC();
-  renderConv();render();refresh();
-  U.messages.scrollTop=U.messages.scrollHeight;
-  U.form.classList.remove('hidden');
-  U.prompt.focus();
+  if(S.ctl)S.ctl.abort();S.ctl=null;S.activeConvId=id;
+  expandedMsgs.clear();persistC();renderConv();render();refresh();
+  U.messages.scrollTop=U.messages.scrollHeight;U.form.classList.remove('hidden');U.prompt.focus();
 }
 
 function delConv(id){if(S.conversations.length<=1){st('至少保留一个对话');return;}const c=S.conversations.find(x=>x.id===id);if(!confirm(`删除「${c?.title||''}」？`))return;const i=S.conversations.findIndex(x=>x.id===id);S.conversations.splice(i,1);if(id===S.activeConvId)S.activeConvId=(S.conversations[i]||S.conversations[i-1]||S.conversations[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistC();renderConv();render();refresh();}
 function renameConv(id){const c=S.conversations.find(x=>x.id===id);if(!c)return;const t=prompt('新标题：',c.title);if(t===null||!t.trim())return;c.title=t.trim();c.updatedAt=new Date().toISOString();persistC();renderConv();}
 function aConv(){return S.conversations.find(x=>x.id===S.activeConvId);}
-function persistC(){write(K.c,S.conversations.map(c=>({id:c.id,title:c.title,messages:c.messages.map(m=>{const o={id:m.id,role:m.role,content:m.content,time:m.time,error:!!m.error};if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;return o;}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated})));markLU();}
-function renderConv(){U.convList.innerHTML=S.conversations.map(c=>{const a=c.id===S.activeConvId;const n=c.messages.filter(x=>!x.pending).length;return`<div class="conv-item${a?' active':''}" data-id="${esc(c.id)}"><div class="title">${esc(c.title)}</div><div class="meta"><span>${n} 条</span><span>${fmtD(c.updatedAt)}</span></div><div class="actions"><button class="rn">重命名</button><button class="del">删除</button></div></div>`;}).join('');}
+function persistC(){write(K.c,S.conversations.map(c=>({id:c.id,title:c.title,messages:c.messages.map(m=>{const o={id:m.id,role:m.role,content:m.content,time:m.time,error:!!m.error};if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;if(m.hidden)o.hidden=true;return o;}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated})));markLU();}
+
+function renderConv(){
+  U.convList.innerHTML=S.conversations.map(c=>{
+    const a=c.id===S.activeConvId;
+    const total=c.messages.filter(x=>!x.pending).length;
+    const hidden=c.messages.filter(x=>x.hidden).length;
+    const vis=total-hidden;
+    const metaText=hidden>0?`${vis} \u6761 \u00B7 ${hidden} \u9690\u85CF`:`${total} \u6761`;
+    return`<div class="conv-item${a?' active':''}" data-id="${esc(c.id)}"><div class="title">${esc(c.title)}</div><div class="meta"><span>${metaText}</span><span>${fmtD(c.updatedAt)}</span></div><div class="actions"><button class="rn">重命名</button><button class="del">删除</button></div></div>`;
+  }).join('');
+}
+
 function fmtD(v){try{const d=new Date(v),now=new Date();if(d.toDateString()===now.toDateString())return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});if(new Date(now-864e5).toDateString()===d.toDateString())return'昨天';if(now.getFullYear()===d.getFullYear())return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric'});return d.toLocaleDateString('zh-CN',{year:'numeric',month:'short',day:'numeric'});}catch{return'';}}
 
 function read(k,f){try{const v=localStorage.getItem(k);return v?JSON.parse(v):f;}catch{return f;}}
@@ -705,6 +762,51 @@ function refresh(){ensureP();U.profileInfo.textContent=S.s.name||'默认方案';
 function st(t){U.status.textContent=t;}
 function resize(){U.prompt.style.height='auto';U.prompt.style.height=Math.min(U.prompt.scrollHeight,180)+'px';}
 
+// ===== Hide / Show Pairs =====
+function toggleHidePair(userMsgId){
+  const conv=aConv();if(!conv)return;
+  const idx=conv.messages.findIndex(m=>m.id===userMsgId);
+  if(idx===-1)return;
+  const msg=conv.messages[idx];
+  if(msg.role!=='user')return;
+  const newHidden=!msg.hidden;
+  for(let i=idx;i<conv.messages.length;i++){
+    const m=conv.messages[i];
+    if(i>idx&&m.role==='user')break;
+    m.hidden=newHidden;
+  }
+  persistC();renderConv();render();
+}
+
+function hideFromAssistant(asstMsgId){
+  const conv=aConv();if(!conv)return;
+  const idx=conv.messages.findIndex(m=>m.id===asstMsgId);
+  if(idx===-1)return;
+  for(let i=idx;i>=0;i--){
+    if(conv.messages[i].role==='user'){toggleHidePair(conv.messages[i].id);return;}
+  }
+}
+
+function showHiddenFrom(startId){
+  const conv=aConv();if(!conv)return;
+  const idx=conv.messages.findIndex(m=>m.id===startId);
+  if(idx===-1)return;
+  for(let i=idx;i<conv.messages.length;i++){
+    if(!conv.messages[i].hidden)break;
+    conv.messages[i].hidden=false;
+  }
+  persistC();renderConv();render();
+  setTimeout(()=>{const el=document.querySelector(`[data-mid="${startId}"]`);if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},50);
+}
+
+function showAllHidden(){
+  const conv=aConv();if(!conv)return;
+  let changed=false;
+  for(const m of conv.messages){if(m.hidden){m.hidden=false;changed=true;}}
+  if(changed){persistC();renderConv();render();}
+}
+
+// ===== Messages =====
 async function submit(e){e.preventDefault();if(S.ctl){S.ctl.abort();return;}const text=U.prompt.value.trim();if(!text)return U.prompt.focus();if(!S.s.baseUrl||!S.s.apiKey||!S.s.model){st('请先配置接口');return showM('mask',true);}const conv=aConv();if(!conv)return;const user=mkMsg('user',text),ai=mkMsg('assistant','',{pending:true});conv.messages.push(user,ai);conv.updatedAt=new Date().toISOString();persistC();renderConv();render({scroll:true});U.prompt.value='';resize();try{await reply(ai.id);if(!conv.titleGenerated&&conv.messages.filter(x=>!x.pending&&x.role==='user').length>=2)await genTitle(conv);}catch(err){const t=conv.messages.find(x=>x.id===ai.id);if(t){t.pending=false;t.error=!(err?.name==='AbortError');t.content=err?.name==='AbortError'?(t.content||'已停止'):'请求失败：'+(err?.message||'未知');}st(err?.name==='AbortError'?'已停止':'请求失败');}finally{S.ctl=null;persistC();renderConv();refresh();render();U.prompt.focus();}}
 
 async function reply(mid){
@@ -754,8 +856,7 @@ async function execToolCalls(tc,conv,ai,step,maxSteps){
     sms.push(mkMsg('tool_status','\uD83D\uDD0D \u6B63\u5728\u8BFB\u53D6 '+(dm||turl)+'...',{toolCallId:t.id,toolName:t.function.name,toolUrl:turl,pending:true}));
   }
   idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,...sms);
-  render({scroll:true});
-  st('工具调用中 ('+(step+1)+'/'+maxSteps+')...');
+  render({scroll:true});st('工具调用中 ('+(step+1)+'/'+maxSteps+')...');
   const results=await Promise.all(tc.map(async t=>{
     let turl='';try{turl=JSON.parse(t.function.arguments).url||'';}catch{}
     try{const r=await fetch('/api/fetch?url='+encodeURIComponent(turl),{signal:S.ctl.signal});const j=await r.json();return{tool_call_id:t.id,name:t.function.name,content:j.error?'获取失败: '+j.error:(j.content||''),error:!!j.error,url:turl};}
@@ -780,7 +881,7 @@ function extractToolCalls(json){
 function buildApiMsgs(conv,pi){return S.s.wireApi==='responses'?buildApiMsgsR(conv,pi):buildApiMsgsC(conv,pi);}
 function buildApiMsgsC(conv,pi){
   const out=[];const sys=sysPrompt();if(sys)out.push({role:'system',content:sys});
-  for(const x of conv.messages){if(x.id===pi.id||x.pending||x.role==='tool_status')continue;
+  for(const x of conv.messages){if(x.id===pi.id||x.pending||x.role==='tool_status'||x.hidden)continue;
     if(x.role==='assistant'&&x.toolCalls?.length)out.push({role:'assistant',content:x.content||null,tool_calls:x.toolCalls});
     else if(x.role==='tool')out.push({role:'tool',tool_call_id:x.toolCallId,content:x.content});
     else if(x.role==='user'||x.role==='assistant')out.push({role:x.role,content:x.content});
@@ -788,7 +889,7 @@ function buildApiMsgsC(conv,pi){
 }
 function buildApiMsgsR(conv,pi){
   const out=[];const sys=sysPrompt();if(sys)out.push({role:'system',content:sys});
-  for(const x of conv.messages){if(x.id===pi.id||x.pending||x.role==='tool_status')continue;
+  for(const x of conv.messages){if(x.id===pi.id||x.pending||x.role==='tool_status'||x.hidden)continue;
     if(x.role==='assistant'&&x.toolCalls?.length){for(const tc of x.toolCalls)out.push({type:'function_call',call_id:tc.id,name:tc.function.name,arguments:tc.function.arguments});if(x.content)out.push({role:'assistant',content:x.content});}
     else if(x.role==='tool')out.push({type:'function_call_output',call_id:x.toolCallId,output:x.content});
     else if(x.role==='user'||x.role==='assistant')out.push({role:x.role,content:x.content});
@@ -799,20 +900,20 @@ function shouldShowMsg(m){if(m.role==='tool')return false;if(m.role==='assistant
 async function genTitle(conv){
   if(!S.s.baseUrl||!S.s.apiKey||!S.s.model)return;
   try{
-    const um=conv.messages.filter(x=>x.role==='user').slice(0,2).map(x=>x.content).join('\n');
+    const um=conv.messages.filter(x=>x.role==='user'&&!x.hidden).slice(0,2).map(x=>x.content).join('\n');
     const url=ep(S.s.baseUrl);
     const msgs=[{role:'system',content:'用不超过15个字概括对话主题，只输出标题'},{role:'user',content:um}];
     let body;
     if(S.s.wireApi==='responses')body={model:S.s.model,input:msgs,stream:false};
     else body={model:S.s.model,messages:msgs,temperature:.7,max_tokens:30,stream:false};
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body)});
-    if(!res.ok){console.warn('标题生成 HTTP 错误:',res.status);return;}
+    if(!res.ok)return;
     const json=await res.json();const title=cText(json)?.trim();
     if(title){conv.title=title.slice(0,20);conv.titleGenerated=true;conv.updatedAt=new Date().toISOString();persistC();renderConv();}
   }catch(e){console.warn('标题生成失败:',e);}
 }
 
-function apiMsgs(conv){const out=[];const sys=sysPrompt();if(sys)out.push({role:'system',content:sys});conv.messages.forEach(x=>{if(x.pending||x.role==='tool_status'||x.role==='tool')return;if(x.role==='assistant'&&x.toolCalls?.length&&!x.content?.trim())return;out.push({role:x.role,content:x.content});});return out;}
+function apiMsgs(conv){const out=[];const sys=sysPrompt();if(sys)out.push({role:'system',content:sys});conv.messages.forEach(x=>{if(x.pending||x.role==='tool_status'||x.role==='tool'||x.hidden)return;if(x.role==='assistant'&&x.toolCalls?.length&&!x.content?.trim())return;out.push({role:x.role,content:x.content});});return out;}
 function sysPrompt(){return[S.s.systemPrompt?.trim(),S.s.thinking?'当前为思考模式。请先分析问题、拆解步骤，再给出清晰的最终答案。':'当前为非思考模式。请直接给出简洁明确的答案。'].filter(Boolean).join('\n\n');}
 function ep(u){const c=String(u||'').trim().replace(/\/+$/,'');if(!c)return'';const r=S.s.wireApi==='responses';if(r){if(/\/responses$/i.test(c))return c;if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/responses';return c+'/v1/responses';}if(/\/chat\/completions$/i.test(c))return c;if(/\/responses$/i.test(c))return c.replace(/\/responses$/i,'/chat/completions');if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions';}
 
@@ -843,11 +944,28 @@ function processSSE(event, textCb, toolCb) {
 function cText(p){if(p?.output&&Array.isArray(p.output)){const parts=[];for(const item of p.output){if(item.content&&Array.isArray(item.content)){for(const c of item.content){if(c.type==='output_text'&&c.text)parts.push(c.text);else if(typeof c.text==='string'&&c.text)parts.push(c.text);}}if(typeof item.text==='string')parts.push(item.text);}if(parts.length)return parts.join('');}const c=p?.choices?.[0];return normC2(c?.delta?.content??c?.message?.content);}
 function normC2(v){return typeof v==='string'?v:Array.isArray(v)?v.map(x=>typeof x==='string'?x:x?.text??x?.content??'').join(''):'';}
 
+// ===== Render =====
 function render(opts={}){
   const conv=aConv();
   const allMsgs=conv?.messages||[];
-  const showMsgs=allMsgs.filter(shouldShowMsg);
-  U.messages.innerHTML=showMsgs.length?'<div class="msg-stack">'+showMsgs.map(vMsg).join('')+'</div>':emptyH();
+  let parts=[];
+  let i=0;
+
+  while(i<allMsgs.length){
+    const m=allMsgs[i];
+    if(m.hidden){
+      let pairCount=0;let startId=m.id;let j=i;
+      while(j<allMsgs.length&&allMsgs[j].hidden){if(allMsgs[j].role==='user')pairCount++;j++;}
+      i=j;
+      const pt=pairCount<=1?'1 \u5BF9\u95EE\u7B54\u5DF2\u9690\u85CF':pairCount+' \u5BF9\u95EE\u7B54\u5DF2\u9690\u85CF';
+      parts.push(`<div class="hidden-indicator"><span class="hi-text">\u22EF ${pt}</span><button class="show-hidden-btn" data-show-from="${esc(startId)}">\u663E\u793A</button><button class="show-all-hidden-btn">\u5168\u90E8\u663E\u793A</button></div>`);
+      continue;
+    }
+    if(shouldShowMsg(m))parts.push(vMsg(m));
+    i++;
+  }
+
+  U.messages.innerHTML=parts.length?'<div class="msg-stack">'+parts.join('')+'</div>':emptyH();
   if(opts.scroll)U.messages.scrollTop=U.messages.scrollHeight;
   if(monacoReady) document.querySelectorAll('.msg:not(.pending) .cb').forEach(initCB);
   applyCollapsible();
@@ -860,7 +978,12 @@ function vMsg(m){
   const u=m.role==='user';
   const cls=['msg',u?'user':'assistant',m.error?'error':'',m.pending?'pending':''].filter(Boolean).join(' ');
   const pf=!u&&!m.pending&&!m.error&&m.latency!=null?`<span class="msg-pf">${m.latency}ms \u00B7 ${m.speed||'0'} \u5B57/s</span>`:'';
-  return`<div class="${cls}" data-mid="${esc(m.id)}"><div class="msg-hd"><span class="msg-av">${u?'U':'AI'}</span><span class="msg-nm">${u?'你':'AI'}</span>${pf}<span class="msg-tm">${fmtT(m.time)}</span></div><div class="msg-bd">${mBd(m,u)}</div></div>`;
+  let hideBtn='';
+  if(!m.pending){
+    if(u)hideBtn=`<button class="msg-hide-btn" data-hide-pair="${esc(m.id)}">\u9690\u85CF</button>`;
+    else if(m.role==='assistant'&&!m.error&&m.content?.trim())hideBtn=`<button class="msg-hide-btn" data-hide-assistant="${esc(m.id)}">\u9690\u85CF</button>`;
+  }
+  return`<div class="${cls}" data-mid="${esc(m.id)}"><div class="msg-hd"><span class="msg-av">${u?'U':'AI'}</span><span class="msg-nm">${u?'你':'AI'}</span>${hideBtn}${pf}<span class="msg-tm">${fmtT(m.time)}</span></div><div class="msg-bd">${mBd(m,u)}</div></div>`;
 }
 
 function mBd(m,u){
@@ -872,27 +995,16 @@ function mBd(m,u){
 // ===== Collapsible (user messages only) =====
 function applyCollapsible(){
   const THRESHOLD=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--collapse-h'))||240;
-  // Only target user messages
   const userMsgEls=U.messages.querySelectorAll('.msg.user:not(.pending)');
   const len=userMsgEls.length;
-
   userMsgEls.forEach((msgEl,idx)=>{
-    const bd=msgEl.querySelector('.msg-bd');
-    if(!bd) return;
-    const msgId=msgEl.dataset?.mid;
-    if(!msgId) return;
-
-    bd.classList.add('measuring');
-    const fullH=bd.scrollHeight;
-    bd.classList.remove('measuring');
-
-    if(fullH<=THRESHOLD+50) return;
-
+    const bd=msgEl.querySelector('.msg-bd');if(!bd)return;
+    const msgId=msgEl.dataset?.mid;if(!msgId)return;
+    bd.classList.add('measuring');const fullH=bd.scrollHeight;bd.classList.remove('measuring');
+    if(fullH<=THRESHOLD+50)return;
     const isLast=(idx===len-1);
     const isExpanded=expandedMsgs.has(msgId)||isLast;
-
-    if(!isExpanded) bd.classList.add('collapsed');
-
+    if(!isExpanded)bd.classList.add('collapsed');
     const btn=document.createElement('button');
     btn.className='collapse-toggle';
     btn.textContent=isExpanded?'\u6536\u8D77':'\u5C55\u5F00\u5168\u6587';
