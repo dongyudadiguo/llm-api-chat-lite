@@ -663,7 +663,7 @@ function resize(){U.prompt.style.height='auto';U.prompt.style.height=Math.min(U.
 // ===== Messages =====
 async function submit(e){e.preventDefault();if(S.ctl){S.ctl.abort();return;}const text=U.prompt.value.trim();if(!text)return U.prompt.focus();if(!S.s.baseUrl||!S.s.apiKey||!S.s.model){st('请先配置接口');return showM('mask',true);}const conv=aConv();if(!conv)return;const user=mkMsg('user',text),ai=mkMsg('assistant','',{pending:true});conv.messages.push(user,ai);conv.updatedAt=new Date().toISOString();persistC();renderConv();render({scroll:true});U.prompt.value='';resize();try{await reply(ai.id);if(!conv.titleGenerated&&conv.messages.filter(x=>!x.pending&&x.role==='user').length>=2)await genTitle(conv);}catch(err){const t=conv.messages.find(x=>x.id===ai.id);if(t){t.pending=false;t.error=!(err?.name==='AbortError');t.content=err?.name==='AbortError'?(t.content||'已停止'):'请求失败：'+(err?.message||'未知');}st(err?.name==='AbortError'?'已停止':'请求失败');}finally{S.ctl=null;persistC();renderConv();refresh();render();U.prompt.focus();}}
 
-// ===== Function Calling Loop =====
+// ===== Stream + Function Calling Loop =====
 async function reply(mid){
   const conv=aConv();if(!conv)return;
   const ai=conv.messages.find(x=>x.id===mid);if(!ai)return;
@@ -675,57 +675,43 @@ async function reply(mid){
     const msgs=buildApiMsgs(conv,ai);
     const toolsDef=S.s.wireApi==='responses'?TOOLS_RESP:TOOLS_CHAT;
     let body;
-    if(S.s.wireApi==='responses')body={model:S.s.model,input:msgs,stream:false,tools:toolsDef};
-    else body={model:S.s.model,messages:msgs,temperature:S.s.temperature,stream:false,tools:toolsDef};
+    if(S.s.wireApi==='responses')body={model:S.s.model,input:msgs,stream:S.s.stream,tools:toolsDef};
+    else body={model:S.s.model,messages:msgs,temperature:S.s.temperature,stream:S.s.stream,tools:toolsDef};
 
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});
     if(!res.ok){const e=await res.text();throw new Error(e||('HTTP '+res.status));}
-    const json=await res.json();
-    const tc=extractToolCalls(json);
-    const txt=cText(json);
+    const ct=res.headers.get('content-type')||'';
 
-    if(tc.length>0){
-      // Store assistant message with tool_calls
-      const asst=mkMsg('assistant',txt||'');asst.toolCalls=tc;
-      let idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,asst);
-
-      // Create & insert status messages
-      const sms=[];
-      for(const t of tc){
-        let turl='';try{turl=JSON.parse(t.function.arguments).url||'';}catch{}
-        const dm=extractDomain(turl);
-        sms.push(mkMsg('tool_status','\uD83D\uDD0D 正在读取 '+(dm||turl)+'...',{toolCallId:t.id,toolName:t.function.name,toolUrl:turl,pending:true}));
+    // Stream path
+    if(S.s.stream&&/event-stream/i.test(ct)&&res.body){
+      const toolCallsMap={};let hasToolCalls=false;let fc=null;
+      await rStream(res,(chunk)=>{
+        if(fc===null){fc=Date.now();ai.latency=fc-t0;}
+        ai.content+=chunk;render();
+      },(delta)=>{
+        hasToolCalls=true;
+        const i=delta.index!=null?delta.index:0;
+        if(!toolCallsMap[i])toolCallsMap[i]={id:'',type:'function',function:{name:'',arguments:''}};
+        if(delta.id)toolCallsMap[i].id=delta.id;
+        if(delta.type)toolCallsMap[i].type=delta.type;
+        if(delta.function?.name)toolCallsMap[i].function.name+=delta.function.name;
+        if(delta.function?.arguments)toolCallsMap[i].function.arguments+=delta.function.arguments;
+      });
+      if(hasToolCalls){
+        await execToolCalls(Object.values(toolCallsMap),conv,ai,step,maxSteps);
+        continue;
       }
-      idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,...sms);
-      render({scroll:true});
-      st('工具调用中 ('+(step+1)+'/'+maxSteps+')...');
-
-      // Execute tools in parallel
-      const results=await Promise.all(tc.map(async t=>{
-        let turl='';try{turl=JSON.parse(t.function.arguments).url||'';}catch{}
-        try{
-          const r=await fetch('/api/fetch?url='+encodeURIComponent(turl),{signal:S.ctl.signal});
-          const j=await r.json();
-          return{tool_call_id:t.id,name:t.function.name,content:j.error?'获取失败: '+j.error:(j.content||''),error:!!j.error,url:turl};
-        }catch(err){if(err.name==='AbortError')throw err;return{tool_call_id:t.id,name:t.function.name,content:'获取失败: '+err.message,error:true,url:turl};}
-      }));
-
-      // Update status messages & create tool result messages
-      const tms=[];
-      for(const r of results){
-        const sm=sms.find(m=>m.toolCallId===r.tool_call_id);
-        if(sm){const d=extractDomain(r.url);sm.pending=false;sm.error=r.error;sm.content=r.error?'\u274C 读取 '+d+' 失败':'\u2705 已读取 '+d;}
-        tms.push(mkMsg('tool',r.content.slice(0,8000),{toolCallId:r.tool_call_id,toolName:r.name}));
-      }
-      idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,...tms);
-      render({scroll:true});
-
-    }else{
-      ai.content=txt||'接口返回为空';
-      ai.latency=Date.now()-t0;
-      gotFinal=true;
-      break;
+      if(!ai.content.trim())ai.content='接口返回为空';
+      gotFinal=true;break;
     }
+
+    // Non-stream path
+    const raw=await res.text();
+    let json;try{json=JSON.parse(raw);}catch{ai.content=raw||'接口返回为空';ai.latency=Date.now()-t0;gotFinal=true;break;}
+    const tc=extractToolCalls(json);const txt=cText(json);
+    if(tc.length>0){await execToolCalls(tc,conv,ai,step,maxSteps);continue;}
+    ai.content=txt||'接口返回为空';if(!ai.latency)ai.latency=Date.now()-t0;
+    gotFinal=true;break;
   }
 
   if(!gotFinal&&!ai.content.trim())ai.content='已达到最大工具调用步骤限制（'+maxSteps+'步）';
@@ -734,6 +720,34 @@ async function reply(mid){
   ai.pending=false;ai.error=false;
   if(!ai.content.trim())ai.content='接口返回为空';
   st('完成');
+}
+
+// ===== Tool Execution =====
+async function execToolCalls(tc,conv,ai,step,maxSteps){
+  const asst=mkMsg('assistant','');asst.toolCalls=tc;
+  let idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,asst);
+  const sms=[];
+  for(const t of tc){
+    let turl='';try{turl=JSON.parse(t.function.arguments).url||'';}catch{}
+    const dm=extractDomain(turl);
+    sms.push(mkMsg('tool_status','\uD83D\uDD0D 正在读取 '+(dm||turl)+'...',{toolCallId:t.id,toolName:t.function.name,toolUrl:turl,pending:true}));
+  }
+  idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,...sms);
+  render({scroll:true});
+  st('工具调用中 ('+(step+1)+'/'+maxSteps+')...');
+  const results=await Promise.all(tc.map(async t=>{
+    let turl='';try{turl=JSON.parse(t.function.arguments).url||'';}catch{}
+    try{const r=await fetch('/api/fetch?url='+encodeURIComponent(turl),{signal:S.ctl.signal});const j=await r.json();return{tool_call_id:t.id,name:t.function.name,content:j.error?'获取失败: '+j.error:(j.content||''),error:!!j.error,url:turl};}
+    catch(err){if(err.name==='AbortError')throw err;return{tool_call_id:t.id,name:t.function.name,content:'获取失败: '+err.message,error:true,url:turl};}
+  }));
+  const tms=[];
+  for(const r of results){
+    const sm=sms.find(m=>m.toolCallId===r.tool_call_id);
+    if(sm){const d=extractDomain(r.url);sm.pending=false;sm.error=r.error;sm.content=r.error?'\u274C 读取 '+d+' 失败':'\u2705 已读取 '+d;}
+    tms.push(mkMsg('tool',r.content.slice(0,8000),{toolCallId:r.tool_call_id,toolName:r.name}));
+  }
+  idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,...tms);
+  render({scroll:true});
 }
 
 // ===== Tool Helpers =====
@@ -802,6 +816,43 @@ function apiMsgs(conv){const out=[];const sys=sysPrompt();if(sys)out.push({role:
 function sysPrompt(){return[S.s.systemPrompt?.trim(),S.s.thinking?'当前为思考模式。请先分析问题、拆解步骤，再给出清晰的最终答案。':'当前为非思考模式。请直接给出简洁明确的答案。'].filter(Boolean).join('\n\n');}
 
 function ep(u){const c=String(u||'').trim().replace(/\/+$/,'');if(!c)return'';const r=S.s.wireApi==='responses';if(r){if(/\/responses$/i.test(c))return c;if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/responses';return c+'/v1/responses';}if(/\/chat\/completions$/i.test(c))return c;if(/\/responses$/i.test(c))return c.replace(/\/responses$/i,'/chat/completions');if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions';}
+
+async function rStream(res, textCb, toolCb) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    buf = buf.replace(/\r\n/g, '\n');
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) !== -1) {
+      const event = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      processSSE(event, textCb, toolCb);
+    }
+  }
+  if (buf.trim()) processSSE(buf, textCb, toolCb);
+}
+
+function processSSE(event, textCb, toolCb) {
+  for (const line of event.split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    const t = line.slice(5).trim();
+    if (!t || t === '[DONE]') continue;
+    try {
+      const json = JSON.parse(t);
+      // Responses API format
+      if (json.type === 'response.output_text.delta' && json.delta) { textCb(json.delta); continue; }
+      if (json.type === 'response.function_call') { toolCb(json); continue; }
+      // Chat Completions format
+      const choice = json.choices?.[0];
+      if (choice?.delta?.content) textCb(choice.delta.content);
+      if (choice?.delta?.tool_calls) { for (const tc of choice.delta.tool_calls) toolCb(tc); }
+    } catch {}
+  }
+}
 
 function cText(p){if(p?.output&&Array.isArray(p.output)){const parts=[];for(const item of p.output){if(item.content&&Array.isArray(item.content)){for(const c of item.content){if(c.type==='output_text'&&c.text)parts.push(c.text);else if(typeof c.text==='string'&&c.text)parts.push(c.text);}}if(typeof item.text==='string')parts.push(item.text);}if(parts.length)return parts.join('');}const c=p?.choices?.[0];return normC2(c?.delta?.content??c?.message?.content);}
 function normC2(v){return typeof v==='string'?v:Array.isArray(v)?v.map(x=>typeof x==='string'?x:x?.text??x?.content??'').join(''):'';}
