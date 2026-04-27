@@ -25,6 +25,7 @@
   --radius: 10px;
   --font: 'Inter', -apple-system, 'Segoe UI', sans-serif;
   --mono: 'IBM Plex Mono', 'Menlo', monospace;
+  --collapse-h: 240px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -94,16 +95,8 @@ button { cursor: pointer; border: none; background: none; }
 }
 .fab:hover { background: rgba(39,39,42,.85); color: var(--text-2); }
 
-.fab-menu {
-  position: fixed; top: 12px; left: 12px;
-  z-index: 50;
-}
-
-.fab-group {
-  position: fixed; top: 12px; right: 12px;
-  display: flex; gap: 4px;
-  z-index: 50;
-}
+.fab-menu { position: fixed; top: 12px; left: 12px; z-index: 50; }
+.fab-group { position: fixed; top: 12px; right: 12px; display: flex; gap: 4px; z-index: 50; }
 
 .status-pill {
   position: fixed; top: 54px; left: 12px;
@@ -161,6 +154,7 @@ button { cursor: pointer; border: none; background: none; }
 .msg-bd {
   padding: 10px 14px; border-radius: 10px;
   line-height: 1.75; word-break: break-word;
+  position: relative;
 }
 .msg.user .msg-bd { background: var(--surface); border: 1px solid var(--border); }
 .msg.assistant .msg-bd { background: none; padding-left: 28px; }
@@ -174,6 +168,39 @@ button { cursor: pointer; border: none; background: none; }
   border: none !important;
   line-height: 1.6;
 }
+
+/* ===== Collapsible (user messages only) ===== */
+.msg-bd.collapsed {
+  max-height: var(--collapse-h);
+  overflow: hidden;
+}
+.msg.user .msg-bd.collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 80px;
+  background: linear-gradient(transparent, var(--surface));
+  pointer-events: none;
+  border-radius: 0 0 10px 10px;
+}
+.msg-bd.measuring {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.collapse-toggle {
+  display: inline-block;
+  padding: 3px 0;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color .1s;
+}
+.collapse-toggle:hover { color: var(--text); text-decoration: underline; }
 
 .typing { display: flex; gap: 5px; align-items: center; padding-left: 28px; }
 .typing span {
@@ -222,7 +249,7 @@ button { cursor: pointer; border: none; background: none; }
   max-height: 400px;
 }
 .streaming-cb pre::after {
-  content: '▌';
+  content: '\25CC';
   color: var(--accent);
   animation: cursor-blink 1s step-end infinite;
   margin-left: 1px;
@@ -396,6 +423,7 @@ button { cursor: pointer; border: none; background: none; }
   .status-pill { max-width: 180px; }
   .msg-bd table { font-size: 12px; }
   .msg-bd thead th,.msg-bd tbody td { padding: 5px 8px; }
+  :root { --collapse-h: 200px; }
 }
 </style>
 </head>
@@ -513,6 +541,7 @@ const S={profiles:IS.profiles,activeProfileId:IS.activeProfileId,s:null,conversa
 let isBottom=true;
 let applyingCloud=false;
 let initializing=false;
+const expandedMsgs = new Set();
 
 const U={
   messages:$('#messages'),form:$('#form'),prompt:$('#prompt'),send:$('#sendBtn'),status:$('#status'),
@@ -555,7 +584,25 @@ function bind(){
   U.newProfileBtn.addEventListener('click',createP);
   U.deleteProfileBtn.addEventListener('click',deleteP);
   U.mask.addEventListener('mousedown',e=>{if(e.target===U.mask)showM('mask',false);});
-  U.messages.addEventListener('click',e=>{const t=e.target.closest('[data-suggest]');if(t){U.prompt.value=t.dataset.suggest||'';resize();U.prompt.focus();}});
+  U.messages.addEventListener('click',e=>{
+    const t=e.target.closest('[data-suggest]');
+    if(t){U.prompt.value=t.dataset.suggest||'';resize();U.prompt.focus();return;}
+    const toggle=e.target.closest('.collapse-toggle');
+    if(toggle){
+      const bd=toggle.previousElementSibling;
+      if(!bd||!bd.classList.contains('msg-bd'))return;
+      const msgEl=bd.closest('.msg');
+      const msgId=msgEl?.dataset?.mid;
+      const nowCollapsed=bd.classList.toggle('collapsed');
+      if(nowCollapsed){
+        if(msgId)expandedMsgs.delete(msgId);
+        toggle.textContent='\u5C55\u5F00\u5168\u6587';
+      }else{
+        if(msgId)expandedMsgs.add(msgId);
+        toggle.textContent='\u6536\u8D77';
+      }
+    }
+  });
 
   U.messages.addEventListener('scroll',()=>{
     const el=U.messages;
@@ -607,10 +654,9 @@ function newConv(){
   const c=mkConv();
   S.conversations.unshift(c);
   S.activeConvId=c.id;
+  expandedMsgs.clear();
   persistC();
-  renderConv();
-  render();
-  refresh();
+  renderConv();render();refresh();
   st('新对话已创建');
   U.messages.scrollTop=U.messages.scrollHeight;
   U.form.classList.remove('hidden');
@@ -622,10 +668,9 @@ function selConv(id){
   if(S.ctl)S.ctl.abort();
   S.ctl=null;
   S.activeConvId=id;
+  expandedMsgs.clear();
   persistC();
-  renderConv();
-  render();
-  refresh();
+  renderConv();render();refresh();
   U.messages.scrollTop=U.messages.scrollHeight;
   U.form.classList.remove('hidden');
   U.prompt.focus();
@@ -660,70 +705,45 @@ function refresh(){ensureP();U.profileInfo.textContent=S.s.name||'默认方案';
 function st(t){U.status.textContent=t;}
 function resize(){U.prompt.style.height='auto';U.prompt.style.height=Math.min(U.prompt.scrollHeight,180)+'px';}
 
-// ===== Messages =====
 async function submit(e){e.preventDefault();if(S.ctl){S.ctl.abort();return;}const text=U.prompt.value.trim();if(!text)return U.prompt.focus();if(!S.s.baseUrl||!S.s.apiKey||!S.s.model){st('请先配置接口');return showM('mask',true);}const conv=aConv();if(!conv)return;const user=mkMsg('user',text),ai=mkMsg('assistant','',{pending:true});conv.messages.push(user,ai);conv.updatedAt=new Date().toISOString();persistC();renderConv();render({scroll:true});U.prompt.value='';resize();try{await reply(ai.id);if(!conv.titleGenerated&&conv.messages.filter(x=>!x.pending&&x.role==='user').length>=2)await genTitle(conv);}catch(err){const t=conv.messages.find(x=>x.id===ai.id);if(t){t.pending=false;t.error=!(err?.name==='AbortError');t.content=err?.name==='AbortError'?(t.content||'已停止'):'请求失败：'+(err?.message||'未知');}st(err?.name==='AbortError'?'已停止':'请求失败');}finally{S.ctl=null;persistC();renderConv();refresh();render();U.prompt.focus();}}
 
-// ===== Stream + Function Calling Loop =====
 async function reply(mid){
   const conv=aConv();if(!conv)return;
   const ai=conv.messages.find(x=>x.id===mid);if(!ai)return;
   S.ctl=new AbortController();refresh();st('正在生成...');
   const t0=Date.now();const maxSteps=16;let gotFinal=false;
-
   for(let step=0;step<maxSteps;step++){
-    const url=ep(S.s.baseUrl);
-    const msgs=buildApiMsgs(conv,ai);
-    const isLastStep=step===maxSteps-1;
+    const url=ep(S.s.baseUrl);const msgs=buildApiMsgs(conv,ai);const isLastStep=step===maxSteps-1;
     const toolsDef=S.s.wireApi==='responses'?TOOLS_RESP:TOOLS_CHAT;
     let body;
     if(S.s.wireApi==='responses')body={model:S.s.model,input:msgs,stream:S.s.stream,...(isLastStep?{}:{tools:toolsDef})};
     else body={model:S.s.model,messages:msgs,temperature:S.s.temperature,stream:S.s.stream,...(isLastStep?{}:{tools:toolsDef})};
-
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});
     if(!res.ok){const e=await res.text();throw new Error(e||('HTTP '+res.status));}
     const ct=res.headers.get('content-type')||'';
-
-    // Stream path
     if(S.s.stream&&/event-stream/i.test(ct)&&res.body){
       const toolCallsMap={};let hasToolCalls=false;let fc=null;
-      await rStream(res,(chunk)=>{
-        if(fc===null){fc=Date.now();ai.latency=fc-t0;}
-        ai.content+=chunk;render();
-      },(delta)=>{
-        hasToolCalls=true;
-        const i=delta.index!=null?delta.index:0;
+      await rStream(res,(chunk)=>{if(fc===null){fc=Date.now();ai.latency=fc-t0;}ai.content+=chunk;render();},(delta)=>{
+        hasToolCalls=true;const i=delta.index!=null?delta.index:0;
         if(!toolCallsMap[i])toolCallsMap[i]={id:'',type:'function',function:{name:'',arguments:''}};
-        if(delta.id)toolCallsMap[i].id=delta.id;
-        if(delta.type)toolCallsMap[i].type=delta.type;
+        if(delta.id)toolCallsMap[i].id=delta.id;if(delta.type)toolCallsMap[i].type=delta.type;
         if(delta.function?.name)toolCallsMap[i].function.name+=delta.function.name;
         if(delta.function?.arguments)toolCallsMap[i].function.arguments+=delta.function.arguments;
       });
-      if(hasToolCalls){
-        await execToolCalls(Object.values(toolCallsMap),conv,ai,step,maxSteps);
-        continue;
-      }
-      if(!ai.content.trim())ai.content='接口返回为空';
-      gotFinal=true;break;
+      if(hasToolCalls){await execToolCalls(Object.values(toolCallsMap),conv,ai,step,maxSteps);continue;}
+      if(!ai.content.trim())ai.content='接口返回为空';gotFinal=true;break;
     }
-
-    // Non-stream path
-    const raw=await res.text();
-    let json;try{json=JSON.parse(raw);}catch{ai.content=raw||'接口返回为空';ai.latency=Date.now()-t0;gotFinal=true;break;}
+    const raw=await res.text();let json;try{json=JSON.parse(raw);}catch{ai.content=raw||'接口返回为空';ai.latency=Date.now()-t0;gotFinal=true;break;}
     const tc=extractToolCalls(json);const txt=cText(json);
     if(tc.length>0){await execToolCalls(tc,conv,ai,step,maxSteps);continue;}
-    ai.content=txt||'接口返回为空';if(!ai.latency)ai.latency=Date.now()-t0;
-    gotFinal=true;break;
+    ai.content=txt||'接口返回为空';if(!ai.latency)ai.latency=Date.now()-t0;gotFinal=true;break;
   }
-
   if(!gotFinal&&!ai.content.trim())ai.content='已达到最大工具调用步骤限制（'+maxSteps+'步）';
   const dur=(Date.now()-t0)/1000;
   if(dur>0&&ai.content&&!['接口返回为空','已达到最大工具调用步骤限制（'+maxSteps+'步）'].includes(ai.content))ai.speed=(ai.content.length/dur).toFixed(1);
-  ai.pending=false;ai.error=false;
-  if(!ai.content.trim())ai.content='接口返回为空';
-  st('完成');
+  ai.pending=false;ai.error=false;if(!ai.content.trim())ai.content='接口返回为空';st('完成');
 }
 
-// ===== Tool Execution =====
 async function execToolCalls(tc,conv,ai,step,maxSteps){
   const asst=mkMsg('assistant','');asst.toolCalls=tc;
   let idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,asst);
@@ -731,7 +751,7 @@ async function execToolCalls(tc,conv,ai,step,maxSteps){
   for(const t of tc){
     let turl='';try{turl=JSON.parse(t.function.arguments).url||'';}catch{}
     const dm=extractDomain(turl);
-    sms.push(mkMsg('tool_status','\uD83D\uDD0D 正在读取 '+(dm||turl)+'...',{toolCallId:t.id,toolName:t.function.name,toolUrl:turl,pending:true}));
+    sms.push(mkMsg('tool_status','\uD83D\uDD0D \u6B63\u5728\u8BFB\u53D6 '+(dm||turl)+'...',{toolCallId:t.id,toolName:t.function.name,toolUrl:turl,pending:true}));
   }
   idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,...sms);
   render({scroll:true});
@@ -744,14 +764,12 @@ async function execToolCalls(tc,conv,ai,step,maxSteps){
   const tms=[];
   for(const r of results){
     const sm=sms.find(m=>m.toolCallId===r.tool_call_id);
-    if(sm){const d=extractDomain(r.url);sm.pending=false;sm.error=r.error;sm.content=r.error?'\u274C 读取 '+d+' 失败':'\u2705 已读取 '+d;}
+    if(sm){const d=extractDomain(r.url);sm.pending=false;sm.error=r.error;sm.content=r.error?'\u274C \u8BFB\u53D6 '+d+' \u5931\u8D25':'\u2705 \u5DF2\u8BFB\u53D6 '+d;}
     tms.push(mkMsg('tool',r.content.slice(0,8000),{toolCallId:r.tool_call_id,toolName:r.name}));
   }
-  idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,...tms);
-  render({scroll:true});
+  idx=conv.messages.indexOf(ai);conv.messages.splice(idx,0,...tms);render({scroll:true});
 }
 
-// ===== Tool Helpers =====
 function extractDomain(u){try{const p=new URL(u);return p.hostname+p.pathname.replace(/\/$/,'').slice(0,40);}catch{return u;}}
 function extractToolCalls(json){
   const c=json?.choices?.[0];
@@ -783,71 +801,38 @@ async function genTitle(conv){
   try{
     const um=conv.messages.filter(x=>x.role==='user').slice(0,2).map(x=>x.content).join('\n');
     const url=ep(S.s.baseUrl);
-    const msgs=[
-      {role:'system',content:'用不超过15个字概括对话主题，只输出标题'},
-      {role:'user',content:um}
-    ];
+    const msgs=[{role:'system',content:'用不超过15个字概括对话主题，只输出标题'},{role:'user',content:um}];
     let body;
-    if(S.s.wireApi==='responses'){
-      body={model:S.s.model,input:msgs,stream:false};
-    }else{
-      body={model:S.s.model,messages:msgs,temperature:.7,max_tokens:30,stream:false};
-    }
-    const res=await fetch(url,{
-      method:'POST',
-      headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},
-      body:JSON.stringify(body)
-    });
+    if(S.s.wireApi==='responses')body={model:S.s.model,input:msgs,stream:false};
+    else body={model:S.s.model,messages:msgs,temperature:.7,max_tokens:30,stream:false};
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body)});
     if(!res.ok){console.warn('标题生成 HTTP 错误:',res.status);return;}
-    const json=await res.json();
-    const title=cText(json)?.trim();
-    if(title){
-      conv.title=title.slice(0,20);
-      conv.titleGenerated=true;
-      conv.updatedAt=new Date().toISOString();
-      persistC();
-      renderConv();
-    }
-  }catch(e){
-    console.warn('标题生成失败:',e);
-  }
+    const json=await res.json();const title=cText(json)?.trim();
+    if(title){conv.title=title.slice(0,20);conv.titleGenerated=true;conv.updatedAt=new Date().toISOString();persistC();renderConv();}
+  }catch(e){console.warn('标题生成失败:',e);}
 }
 
 function apiMsgs(conv){const out=[];const sys=sysPrompt();if(sys)out.push({role:'system',content:sys});conv.messages.forEach(x=>{if(x.pending||x.role==='tool_status'||x.role==='tool')return;if(x.role==='assistant'&&x.toolCalls?.length&&!x.content?.trim())return;out.push({role:x.role,content:x.content});});return out;}
 function sysPrompt(){return[S.s.systemPrompt?.trim(),S.s.thinking?'当前为思考模式。请先分析问题、拆解步骤，再给出清晰的最终答案。':'当前为非思考模式。请直接给出简洁明确的答案。'].filter(Boolean).join('\n\n');}
-
 function ep(u){const c=String(u||'').trim().replace(/\/+$/,'');if(!c)return'';const r=S.s.wireApi==='responses';if(r){if(/\/responses$/i.test(c))return c;if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/responses';return c+'/v1/responses';}if(/\/chat\/completions$/i.test(c))return c;if(/\/responses$/i.test(c))return c.replace(/\/responses$/i,'/chat/completions');if(/\/v1$/i.test(c)||/\/v\d+(?:\/[^/]+)?$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions';}
 
 async function rStream(res, textCb, toolCb) {
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = '';
+  const reader = res.body.getReader();const dec = new TextDecoder();let buf = '';
   while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    buf = buf.replace(/\r\n/g, '\n');
-    let idx;
-    while ((idx = buf.indexOf('\n\n')) !== -1) {
-      const event = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
-      processSSE(event, textCb, toolCb);
-    }
+    const { done, value } = await reader.read();if (done) break;
+    buf += dec.decode(value, { stream: true });buf = buf.replace(/\r\n/g, '\n');let idx;
+    while ((idx = buf.indexOf('\n\n')) !== -1) {const event = buf.slice(0, idx);buf = buf.slice(idx + 2);processSSE(event, textCb, toolCb);}
   }
   if (buf.trim()) processSSE(buf, textCb, toolCb);
 }
 
 function processSSE(event, textCb, toolCb) {
   for (const line of event.split('\n')) {
-    if (!line.startsWith('data:')) continue;
-    const t = line.slice(5).trim();
-    if (!t || t === '[DONE]') continue;
+    if (!line.startsWith('data:')) continue;const t = line.slice(5).trim();if (!t || t === '[DONE]') continue;
     try {
       const json = JSON.parse(t);
-      // Responses API format
       if (json.type === 'response.output_text.delta' && json.delta) { textCb(json.delta); continue; }
       if (json.type === 'response.function_call') { toolCb(json); continue; }
-      // Chat Completions format
       const choice = json.choices?.[0];
       if (choice?.delta?.content) textCb(choice.delta.content);
       if (choice?.delta?.tool_calls) { for (const tc of choice.delta.tool_calls) toolCb(tc); }
@@ -858,7 +843,6 @@ function processSSE(event, textCb, toolCb) {
 function cText(p){if(p?.output&&Array.isArray(p.output)){const parts=[];for(const item of p.output){if(item.content&&Array.isArray(item.content)){for(const c of item.content){if(c.type==='output_text'&&c.text)parts.push(c.text);else if(typeof c.text==='string'&&c.text)parts.push(c.text);}}if(typeof item.text==='string')parts.push(item.text);}if(parts.length)return parts.join('');}const c=p?.choices?.[0];return normC2(c?.delta?.content??c?.message?.content);}
 function normC2(v){return typeof v==='string'?v:Array.isArray(v)?v.map(x=>typeof x==='string'?x:x?.text??x?.content??'').join(''):'';}
 
-// ===== Render =====
 function render(opts={}){
   const conv=aConv();
   const allMsgs=conv?.messages||[];
@@ -866,24 +850,54 @@ function render(opts={}){
   U.messages.innerHTML=showMsgs.length?'<div class="msg-stack">'+showMsgs.map(vMsg).join('')+'</div>':emptyH();
   if(opts.scroll)U.messages.scrollTop=U.messages.scrollHeight;
   if(monacoReady) document.querySelectorAll('.msg:not(.pending) .cb').forEach(initCB);
+  applyCollapsible();
 }
 
 function emptyH(){return'<div class="msg-stack"><div class="empty"><h2>AI Chat Lite</h2><p>轻量、实用的 AI 对话工具。配置接口后即可开始。</p><div class="chips"><button class="chip" data-suggest="帮我总结下面这段内容：">总结内容</button><button class="chip" data-suggest="请解释这段代码：">解释代码</button><button class="chip" data-suggest="帮我写一段产品介绍文案。">生成文案</button></div></div></div>';}
 
 function vMsg(m){
-  if(m.role==='tool_status'){
-    return`<div class="msg tool-msg"><div class="msg-bd tool-status-bd">${esc(m.content)}</div></div>`;
-  }
+  if(m.role==='tool_status')return`<div class="msg tool-msg"><div class="msg-bd tool-status-bd">${esc(m.content)}</div></div>`;
   const u=m.role==='user';
   const cls=['msg',u?'user':'assistant',m.error?'error':'',m.pending?'pending':''].filter(Boolean).join(' ');
-  const pf=!u&&!m.pending&&!m.error&&m.latency!=null?`<span class="msg-pf">${m.latency}ms · ${m.speed||'0'} 字/s</span>`:'';
-  return`<div class="${cls}"><div class="msg-hd"><span class="msg-av">${u?'U':'AI'}</span><span class="msg-nm">${u?'你':'AI'}</span>${pf}<span class="msg-tm">${fmtT(m.time)}</span></div><div class="msg-bd">${mBd(m,u)}</div></div>`;
+  const pf=!u&&!m.pending&&!m.error&&m.latency!=null?`<span class="msg-pf">${m.latency}ms \u00B7 ${m.speed||'0'} \u5B57/s</span>`:'';
+  return`<div class="${cls}" data-mid="${esc(m.id)}"><div class="msg-hd"><span class="msg-av">${u?'U':'AI'}</span><span class="msg-nm">${u?'你':'AI'}</span>${pf}<span class="msg-tm">${fmtT(m.time)}</span></div><div class="msg-bd">${mBd(m,u)}</div></div>`;
 }
 
 function mBd(m,u){
   if(m.pending&&!m.content) return '<div class="typing"><span></span><span></span><span></span></div>';
   if(u) return '<p>'+esc(m.content).replace(/\n/g,'<br>')+'</p>';
   return md(m.content);
+}
+
+// ===== Collapsible (user messages only) =====
+function applyCollapsible(){
+  const THRESHOLD=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--collapse-h'))||240;
+  // Only target user messages
+  const userMsgEls=U.messages.querySelectorAll('.msg.user:not(.pending)');
+  const len=userMsgEls.length;
+
+  userMsgEls.forEach((msgEl,idx)=>{
+    const bd=msgEl.querySelector('.msg-bd');
+    if(!bd) return;
+    const msgId=msgEl.dataset?.mid;
+    if(!msgId) return;
+
+    bd.classList.add('measuring');
+    const fullH=bd.scrollHeight;
+    bd.classList.remove('measuring');
+
+    if(fullH<=THRESHOLD+50) return;
+
+    const isLast=(idx===len-1);
+    const isExpanded=expandedMsgs.has(msgId)||isLast;
+
+    if(!isExpanded) bd.classList.add('collapsed');
+
+    const btn=document.createElement('button');
+    btn.className='collapse-toggle';
+    btn.textContent=isExpanded?'\u6536\u8D77':'\u5C55\u5F00\u5168\u6587';
+    bd.parentNode.insertBefore(btn,bd.nextSibling);
+  });
 }
 
 // ===== Markdown =====
@@ -1041,7 +1055,7 @@ function initCB(el){
     el.appendChild(wrapper);
   } else {
     const editorEl=document.createElement('div');
-    editorEl.style.cssText='height:'+Math.min(text.split('\n').length*18+32,400)+'px;';
+    editorEl.style.cssText='height:'+Math.min(text.split('\n').length*18+32,320)+'px;';
     el.appendChild(editorEl);
     const editor=monaco.editor.create(editorEl,{
       value:text,language:lang,theme:'chat-dark',readOnly:true,
