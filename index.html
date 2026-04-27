@@ -668,15 +668,16 @@ async function reply(mid){
   const conv=aConv();if(!conv)return;
   const ai=conv.messages.find(x=>x.id===mid);if(!ai)return;
   S.ctl=new AbortController();refresh();st('正在生成...');
-  const t0=Date.now();const maxSteps=8;let gotFinal=false;
+  const t0=Date.now();const maxSteps=16;let gotFinal=false;
 
   for(let step=0;step<maxSteps;step++){
     const url=ep(S.s.baseUrl);
     const msgs=buildApiMsgs(conv,ai);
+    const isLastStep=step===maxSteps-1;
     const toolsDef=S.s.wireApi==='responses'?TOOLS_RESP:TOOLS_CHAT;
     let body;
-    if(S.s.wireApi==='responses')body={model:S.s.model,input:msgs,stream:S.s.stream,tools:toolsDef};
-    else body={model:S.s.model,messages:msgs,temperature:S.s.temperature,stream:S.s.stream,tools:toolsDef};
+    if(S.s.wireApi==='responses')body={model:S.s.model,input:msgs,stream:S.s.stream,...(isLastStep?{}:{tools:toolsDef})};
+    else body={model:S.s.model,messages:msgs,temperature:S.s.temperature,stream:S.s.stream,...(isLastStep?{}:{tools:toolsDef})};
 
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});
     if(!res.ok){const e=await res.text();throw new Error(e||('HTTP '+res.status));}
