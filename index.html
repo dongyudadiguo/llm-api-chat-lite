@@ -968,14 +968,16 @@ function render(opts={}){
     i++;
   }
   U.messages.innerHTML=parts.length?'<div class="msg-stack">'+parts.join('')+'</div>':emptyH();
-  if(opts.scroll || wasAtBottom){
-    U.messages.scrollTop=U.messages.scrollHeight;
-  } else {
-    const heightDiff = U.messages.scrollHeight - prevScrollHeight;
-    U.messages.scrollTop = prevScrollTop + heightDiff;
-  }
   if(monacoReady) document.querySelectorAll('.msg:not(.pending) .cb').forEach(initCB);
   applyCollapsible();
+  if(opts.scroll || wasAtBottom){
+    U.messages.scrollTop = U.messages.scrollHeight;
+  } else {
+    requestAnimationFrame(()=>{
+      const heightDiff = U.messages.scrollHeight - prevScrollHeight;
+      U.messages.scrollTop = prevScrollTop + heightDiff;
+    });
+  }
 }
 
 function emptyH(){return'<div class="msg-stack"><div class="empty"><h2>AI Chat Lite</h2><p>轻量、实用的 AI 对话工具。配置接口后即可开始。</p><div class="chips"><button class="chip" data-suggest="帮我总结下面这段内容：">总结内容</button><button class="chip" data-suggest="请解释这段代码：">解释代码</button><button class="chip" data-suggest="帮我写一段产品介绍文案。">生成文案</button></div></div></div>';}
