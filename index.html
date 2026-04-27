@@ -668,7 +668,7 @@ async function reply(mid){
   const conv=aConv();if(!conv)return;
   const ai=conv.messages.find(x=>x.id===mid);if(!ai)return;
   S.ctl=new AbortController();refresh();st('正在生成...');
-  const t0=Date.now();const maxSteps=5;let gotFinal=false;
+  const t0=Date.now();const maxSteps=8;let gotFinal=false;
 
   for(let step=0;step<maxSteps;step++){
     const url=ep(S.s.baseUrl);
@@ -737,7 +737,7 @@ async function reply(mid){
 }
 
 // ===== Tool Helpers =====
-function extractDomain(u){try{return new URL(u).hostname;}catch{return u;}}
+function extractDomain(u){try{const p=new URL(u);return p.hostname+p.pathname.replace(/\/$/,'').slice(0,40);}catch{return u;}}
 function extractToolCalls(json){
   const c=json?.choices?.[0];
   if(c?.message?.tool_calls?.length)return c.message.tool_calls.map(tc=>({id:tc.id,type:tc.type||'function',function:{name:tc.function.name,arguments:tc.function.arguments}}));
