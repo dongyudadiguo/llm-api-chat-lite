@@ -948,9 +948,12 @@ function normC2(v){return typeof v==='string'?v:Array.isArray(v)?v.map(x=>typeof
 function render(opts={}){
   const conv=aConv();
   const allMsgs=conv?.messages||[];
+  const el = U.messages;
+  const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  const prevScrollTop = el.scrollTop;
+  const prevScrollHeight = el.scrollHeight;
   let parts=[];
   let i=0;
-
   while(i<allMsgs.length){
     const m=allMsgs[i];
     if(m.hidden){
@@ -964,9 +967,13 @@ function render(opts={}){
     if(shouldShowMsg(m))parts.push(vMsg(m));
     i++;
   }
-
   U.messages.innerHTML=parts.length?'<div class="msg-stack">'+parts.join('')+'</div>':emptyH();
-  if(opts.scroll)U.messages.scrollTop=U.messages.scrollHeight;
+  if(opts.scroll || wasAtBottom){
+    U.messages.scrollTop=U.messages.scrollHeight;
+  } else {
+    const heightDiff = U.messages.scrollHeight - prevScrollHeight;
+    U.messages.scrollTop = prevScrollTop + heightDiff;
+  }
   if(monacoReady) document.querySelectorAll('.msg:not(.pending) .cb').forEach(initCB);
   applyCollapsible();
 }
