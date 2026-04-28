@@ -175,17 +175,12 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer;bo
 <div class="mf"><span class="hint">部分 API 需要后端代理</span><div style="display:flex;gap:8px"><button class="btn" id="maskC">取消</button><button class="btn btn-p" id="maskS">保存</button></div></div>
 </div></div>
 <div class="mm off" id="syncMask"><div class="modal" style="max-width:420px">
-<div class="mh"><div><h2>云同步</h2><p>通过 GitHub Gist 同步</p></div><button class="fab" id="syncX" style="width:28px;height:28px;font-size:12px">✕</button></div>
+<div class="mh"><div><h2>云同步</h2><p>通过 GitHub Gist 自动同步</p></div><button class="fab" id="syncX" style="width:28px;height:28px;font-size:12px">✕</button></div>
 <div class="mb">
-<div class="field"><label>GitHub Token</label><input id="sToken" class="ti" type="password" placeholder="ghp_xxxx..."><span class="hint">Personal access tokens，勾选 <code>gist</code></span></div>
-<div class="field"><label>Gist ID</label><div class="fr"><input id="sGist" class="ti" placeholder="上传后自动生成" readonly><button class="btn" id="sCopy">复制</button></div></div>
-<div class="sw-row"><span>状态</span><span id="sStat" class="tag">未同步</span></div>
+<div class="field"><label>GitHub Token</label><input id="sToken" class="ti" type="password" placeholder="ghp_xxxx..."><span class="hint">Personal access tokens，勾选 <code>gist</code>，填写后自动生效</span></div>
+<div class="sw-row"><span>同步状态</span><span id="sStat" class="tag">未配置</span></div>
 </div>
-<div class="mf"><span class="hint">Token 仅保存在本地</span><div style="display:flex;gap:8px"><button class="btn" id="syncC">关闭</button><button class="btn" id="sDown">下载</button><button class="btn btn-p" id="sUp">上传</button></div></div>
-</div></div>
-<div class="mm off" id="gistMask"><div class="modal" style="max-width:420px">
-<div class="mh"><div><h2>选择备份</h2></div><button class="fab" id="gistX" style="width:28px;height:28px;font-size:12px">✕</button></div>
-<div class="mb" id="gistList"></div>
+<div class="mf"><span class="hint">Token 仅保存在本地</span><div style="display:flex;gap:8px"><button class="btn" id="syncC">关闭</button></div></div>
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
@@ -268,7 +263,7 @@ function tB(t){
 }
 function inline(t){
   var h=esc(t);
-  h=h.replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+  h=h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
   h=h.replace(/`([^`]+)`/g,'<code>$1</code>');
   h=h.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
   h=h.replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>');
@@ -294,13 +289,13 @@ pSel:$('#pSel'),pNew:$('#pNew'),pDel:$('#pDel'),pName:$('#pName'),pUrl:$('#pUrl'
 pSys:$('#pSys'),pTemp:$('#pTemp'),
 sb:$('#sb'),menuBtn:$('#menuBtn'),sbX:$('#sbX'),
 convList:$('#convList'),newConvBtn:$('#newConvBtn'),syncMask:$('#syncMask'),syncBtn:$('#syncBtn'),syncX:$('#syncX'),
-syncC:$('#syncC'),sToken:$('#sToken'),sGist:$('#sGist'),sCopy:$('#sCopy'),sStat:$('#sStat'),
-sUp:$('#sUp'),sDown:$('#sDown'),gistMask:$('#gistMask'),gistList:$('#gistList'),gistX:$('#gistX'),newBtn:$('#newBtn')};
+syncC:$('#syncC'),sToken:$('#sToken'),sStat:$('#sStat'),newBtn:$('#newBtn')};
 
 initing=true;var raw=read(K.s,null);initProfiles(raw);S.c=normConv(read(K.c,[]));ensureConv();initing=false;
 fillForm();renderConv();render();refreshUI();
 if(!S.s?.apiKey||!S.s?.baseUrl||!S.s?.model)status('请先配置接口');
 U.sToken.value=S.sy.t||'';updateSyncUI();bind();
+if(S.sy.t&&S.sy.g)autoDownload();
 
 function bind(){
   U.form.onsubmit=submit;U.prompt.oninput=resize;
@@ -326,10 +321,7 @@ function bind(){
   document.onclick=function(e){if(U.sb.classList.contains('open')&&!U.sb.contains(e.target)&&!U.menuBtn.contains(e.target))U.sb.classList.remove('open')};
   U.syncBtn.onclick=function(){show('syncMask')};U.syncX.onclick=U.syncC.onclick=function(){hide('syncMask')};
   U.syncMask.onmousedown=function(e){if(e.target===U.syncMask)hide('syncMask')};
-  U.sToken.oninput=function(){S.sy.t=U.sToken.value.trim();persistSy()};
-  U.sCopy.onclick=function(){S.sy.g?navigator.clipboard.writeText(S.sy.g).then(function(){status('已复制')}):status('无 Gist ID')};
-  U.sUp.onclick=syncUpload;U.sDown.onclick=syncDownload;
-  U.gistX.onclick=function(){hide('gistMask')};U.gistMask.onmousedown=function(e){if(e.target===U.gistMask)hide('gistMask')};
+  U.sToken.oninput=function(){S.sy.t=U.sToken.value.trim();persistSy();if(S.sy.t){updateSyncStatus('syncing');autoDownload()}else updateSyncStatus('off')};
 }
 
 function langExt(l){var m={javascript:'js',typescript:'ts',python:'py',java:'java',c:'c',cpp:'cpp',csharp:'cs',go:'go',rust:'rs',ruby:'rb',php:'php',swift:'swift',kotlin:'kt',html:'html',css:'css',json:'json',xml:'xml',yaml:'yml',sql:'sql',shell:'sh',bash:'sh',vue:'vue',jsx:'jsx',tsx:'tsx',markdown:'md'};return m[(l||'').toLowerCase()]||'txt'}
@@ -346,7 +338,7 @@ function initProfiles(raw){
   S.s=S.p.find(function(x){return x.id===S.ap})||S.p[0];S.ap=S.s.id;
 }
 function normProfile(v){return{id:v.id||'p_'+uid(),name:(v.name||'默认方案').trim(),baseUrl:(v.baseUrl||DF.baseUrl).trim(),apiKey:(v.apiKey||'').trim(),model:(v.model||DF.model).trim(),systemPrompt:(v.systemPrompt||DF.systemPrompt).trim(),temperature:Math.max(0,Math.min(2,Number(v.temperature)??DF.temperature))}}
-function persistSettings(){write(K.s,{activeProfileId:S.ap,profiles:S.p.map(function(x){return{id:x.id,name:x.name,baseUrl:x.baseUrl,apiKey:x.apiKey,model:x.model,systemPrompt:x.systemPrompt,temperature:x.temperature}})});markLU()}
+function persistSettings(){write(K.s,{activeProfileId:S.ap,profiles:S.p.map(function(x){return{id:x.id,name:x.name,baseUrl:x.baseUrl,apiKey:x.apiKey,model:x.model,systemPrompt:x.systemPrompt,temperature:x.temperature}})});markLU();scheduleSync()}
 function fillForm(){U.pSel.innerHTML=S.p.map(function(x){return'<option value="'+x.id+'">'+esc(x.name)+'</option>'}).join('');U.pSel.value=S.ap;U.pDel.disabled=S.p.length<=1;U.pName.value=S.s.name;U.pUrl.value=S.s.baseUrl;U.pKey.value=S.s.apiKey;U.pModel.value=S.s.model;U.pSys.value=S.s.systemPrompt;U.pTemp.value=Number(S.s.temperature).toFixed(1)}
 function formVal(){return{name:(U.pName.value||'未命名').trim(),baseUrl:U.pUrl.value.trim(),apiKey:U.pKey.value.trim(),model:U.pModel.value.trim(),systemPrompt:U.pSys.value.trim(),temperature:Math.max(0,Math.min(2,Number(U.pTemp.value)||.7))}}
 function saveSettings(){Object.assign(S.s,formVal());persistSettings();fillForm();refreshUI();hide('mask');status('已保存「'+S.s.name+'」');U.prompt.focus()}
@@ -355,17 +347,17 @@ function createProfile(){var n=(U.pName.value.trim()||S.s.name)+' 副本';var na
 function deleteProfile(){if(S.p.length<=1)return status('至少保留一个方案');if(!confirm('删除「'+S.s.name+'」？'))return;var i=S.p.findIndex(function(x){return x.id===S.s.id});S.p.splice(i,1);S.ap=(S.p[i]||S.p[i-1]||S.p[0]).id;S.s=S.p.find(function(x){return x.id===S.ap});persistSettings();fillForm();refreshUI()}
 function refreshUI(){U.pInfo.textContent=S.s?.name||'默认';U.mInfo.textContent=S.s?.model||'未配置';U.send.textContent=S.ctl?'停止':'发送';U.send.className='btn-s'+(S.ctl?' stop':'')}
 
+function renderConv(){U.convList.innerHTML=S.c.map(function(c){var on=c.id===S.ac,total=c.messages.filter(function(x){return!x.pending}).length,hid=c.messages.filter(function(x){return x.hidden}).length;var meta=hid?(total-hid)+' 条 · '+hid+' 隐藏':total+' 条';return'<div class="cnv'+(on?' on':'')+'" data-id="'+c.id+'"><div class="tl">'+esc(c.title)+'</div><div class="mt"><span>'+meta+'</span><span>'+fmtD(c.updatedAt)+'</span></div><div class="ac"><button class="rn">重命名</button><button class="x">删除</button></div></div>'}).join('')}
+function fmtD(v){try{var d=new Date(v),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});if(new Date(n-864e5).toDateString()===d.toDateString())return'昨天';return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}catch(e){return''}}
+
 function normConv(a){return Array.isArray(a)?a.filter(function(x){return x?.id&&Array.isArray(x.messages)}).map(function(x){return{id:x.id,title:x.title||'新对话',messages:normMsg(x.messages),createdAt:x.createdAt||new Date().toISOString(),updatedAt:x.updatedAt||new Date().toISOString(),titleGenerated:!!x.titleGenerated}}):[]}
 function normMsg(a){return Array.isArray(a)?a.filter(function(x){return x?.role&&typeof x.content==='string'}).map(function(x){return{id:x.id||'m_'+uid(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null,hidden:!!x.hidden}}):[]}
 function ensureConv(){if(!S.c.length){var c={id:'c_'+uid(),title:'新对话',messages:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),titleGenerated:false};S.c.push(c);S.ac=c.id;persistConv()}if(!S.ac||!S.c.find(function(x){return x.id===S.ac}))S.ac=S.c[0]?.id}
-function persistConv(){write(K.c,S.c.map(function(c){return{id:c.id,title:c.title,messages:c.messages.map(function(m){var o={id:m.id,role:m.role,content:m.content,time:m.time,error:!!m.error};if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;if(m.hidden)o.hidden=true;return o}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated}}));markLU()}
+function persistConv(){write(K.c,S.c.map(function(c){return{id:c.id,title:c.title,messages:c.messages.map(function(m){var o={id:m.id,role:m.role,content:m.content,time:m.time,error:!!m.error};if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;if(m.hidden)o.hidden=true;return o}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated}}));markLU();scheduleSync()}
 function newConv(){if(S.ctl)S.ctl.abort();S.ctl=null;var c={id:'c_'+uid(),title:'新对话',messages:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),titleGenerated:false};S.c.unshift(c);S.ac=c.id;exp.clear();ascroll=true;sst=0;persistConv();renderConv();render();refreshUI();status('新对话');U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus()}
 function selConv(id){if(id===S.ac)return;if(S.ctl)S.ctl.abort();S.ctl=null;S.ac=id;exp.clear();ascroll=true;sst=0;persistConv();renderConv();render();refreshUI();U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus()}
 function delConv(id){if(S.c.length<=1)return status('至少保留一个对话');var c=S.c.find(function(x){return x.id===id});if(!confirm('删除「'+(c?c.title:'')+'」？'))return;var i=S.c.findIndex(function(x){return x.id===id});S.c.splice(i,1);if(id===S.ac)S.ac=(S.c[i]||S.c[i-1]||S.c[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistConv();renderConv();render();refreshUI()}
 function renameConv(id){var c=S.c.find(function(x){return x.id===id});if(!c)return;var t=prompt('新标题：',c.title);if(t===null||!t.trim())return;c.title=t.trim();c.updatedAt=new Date().toISOString();persistConv();renderConv()}
-
-function renderConv(){U.convList.innerHTML=S.c.map(function(c){var on=c.id===S.ac,total=c.messages.filter(function(x){return!x.pending}).length,hid=c.messages.filter(function(x){return x.hidden}).length;var meta=hid?(total-hid)+' 条 · '+hid+' 隐藏':total+' 条';return'<div class="cnv'+(on?' on':'')+'" data-id="'+c.id+'"><div class="tl">'+esc(c.title)+'</div><div class="mt"><span>'+meta+'</span><span>'+fmtD(c.updatedAt)+'</span></div><div class="ac"><button class="rn">重命名</button><button class="x">删除</button></div></div>'}).join('')}
-function fmtD(v){try{var d=new Date(v),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});if(new Date(n-864e5).toDateString()===d.toDateString())return'昨天';return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}catch(e){return''}}
 
 function toggleHide(id){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===id});if(i===-1||c.messages[i].role!=='user')return;var h=!c.messages[i].hidden;for(var j=i;j<c.messages.length;j++){if(j>i&&c.messages[j].role==='user')break;c.messages[j].hidden=h}persistConv();renderConv();render()}
 function hideFromAsst(aid){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===aid});if(i===-1)return;for(var j=i;j>=0;j--)if(c.messages[j].role==='user'){toggleHide(c.messages[j].id);return}}
@@ -484,37 +476,43 @@ function applyCollapse(){var ch=240;
 
 function updStream(ai){var el=$('[data-mid="'+ai.id+'"]');if(!el){render();return}var bd=el.querySelector('.msg-bd');if(!bd)return;bd.innerHTML=renderMd(ai.content)}
 
+// ====== 自动同步 ======
+var syncTimer=null,syncing=false;
+
+function scheduleSync(){if(!S.sy.t)return;clearTimeout(syncTimer);syncTimer=setTimeout(autoUpload,3000)}
+
+async function autoUpload(){
+  if(!S.sy.t||syncing)return;syncing=true;updateSyncStatus('syncing');
+  try{var data={syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};
+    var url=S.sy.g?'https://api.github.com/gists/'+S.sy.g:'https://api.github.com/gists';
+    var r=await fetch(url,{method:S.sy.g?'PATCH':'POST',headers:{Authorization:'token '+S.sy.t,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Auto Backup',public:false,files:{'data.json':{content:JSON.stringify(data,null,2)}}})});
+    if(!r.ok)throw new Error('HTTP '+r.status);var j=await r.json();if(!S.sy.g)S.sy.g=j.id;
+    S.sy.at=new Date().toISOString();persistSy();updateSyncStatus('ok')}
+  catch(e){updateSyncStatus('error');console.error('Sync failed:',e)}
+  finally{syncing=false}}
+
+async function autoDownload(){
+  if(!S.sy.t||!S.sy.g)return;syncing=true;updateSyncStatus('syncing');
+  try{var r=await fetch('https://api.github.com/gists/'+S.sy.g,{headers:{Authorization:'token '+S.sy.t,Accept:'application/vnd.github.v3+json'}});
+    if(!r.ok)throw new Error('HTTP '+r.status);var gist=await r.json(),file=gist.files?.['data.json'];
+    if(!file?.content)return;var data=JSON.parse(file.content);
+    var remoteTime=new Date(data.syncedAt||0).getTime(),localTime=S.sy.at?new Date(S.sy.at).getTime():0;
+    if(remoteTime>localTime){
+      if(data.settings){write(K.s,data.settings);initProfiles(data.settings);S.s=S.p.find(function(x){return x.id===S.ap});persistSettings();fillForm();refreshUI()}
+      if(data.conversations){write(K.c,data.conversations);S.c=normConv(data.conversations);S.ac=null;ensureConv();persistConv();renderConv();render()}
+      S.sy.at=data.syncedAt;persistSy();updateSyncStatus('ok');status('已从云端恢复')}
+    else{updateSyncStatus('ok');autoUpload()}}
+  catch(e){updateSyncStatus('error');console.error('Download failed:',e)}
+  finally{syncing=false}}
+
+function updateSyncStatus(s){var map={off:'未配置',syncing:'同步中…',ok:'已同步',error:'同步失败'};
+  U.sStat.textContent=map[s]||s;U.sStat.style.color=s==='error'?'var(--d)':s==='ok'?'#4ade80':'var(--t3)';
+  U.syncBtn.style.color=s==='ok'?'#4ade80':s==='error'?'var(--d)':''}
+
 function persistSy(){write(K.y,{t:S.sy.t,g:S.sy.g,at:S.sy.at})}
-function updateSyncUI(){U.sGist.value=S.sy.g||'';U.sStat.textContent=S.sy.at?fmtSy(S.sy.at):'未同步'}
+function updateSyncUI(){U.sStat.textContent=S.sy.at?fmtSy(S.sy.at):S.sy.t?'已配置':'未配置'}
 function fmtSy(v){try{var d=new Date(v),diff=new Date()-d;if(diff<6e4)return'刚刚';if(diff<36e5)return Math.floor(diff/6e4)+' 分钟前';if(diff<864e5)return Math.floor(diff/36e5)+' 小时前';return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return'未知'}}
 function markLU(){}
-
-async function syncUpload(){var t=U.sToken.value.trim()||S.sy.t;if(!t)return status('请填写 Token');
-  S.sy.t=t;U.sToken.value=t;persistSy();status('上传中...');U.sUp.disabled=true;
-  try{var data={syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};
-    var gid=S.sy.g,url=gid?'https://api.github.com/gists/'+gid:'https://api.github.com/gists';
-    var r=await fetch(url,{method:gid?'PATCH':'POST',headers:{Authorization:'token '+t,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Backup',public:false,files:{'data.json':{content:JSON.stringify(data,null,2)}}})});
-    if(!r.ok){var e=await r.json();throw new Error(e.message||'HTTP '+r.status)}
-    var j=await r.json();if(!gid)S.sy.g=j.id;S.sy.at=new Date().toISOString();persistSy();updateSyncUI();status('上传成功')}catch(e){status('上传失败：'+e.message)}finally{U.sUp.disabled=false}}
-
-async function syncDownload(){var t=U.sToken.value.trim()||S.sy.t;if(!t)return status('请填写 Token');
-  S.sy.t=t;U.sToken.value=t;persistSy();
-  if(S.sy.g)return dlById(S.sy.g,t);
-  status('获取列表...');U.sDown.disabled=true;
-  try{var r=await fetch('https://api.github.com/gists',{headers:{Authorization:'token '+t,Accept:'application/vnd.github.v3+json'}});
-    if(!r.ok)throw new Error('HTTP '+r.status);var gists=await r.json(),cg=gists.filter(function(g){return g.files?.['data.json']});
-    if(!cg.length)return status('无备份');
-    U.gistList.innerHTML=cg.map(function(g){return'<div class="cnv" data-gid="'+g.id+'"><div class="tl">'+esc(g.description||'备份')+'</div><div class="mt"><span>'+fmtSy(g.updated_at||g.created_at)+'</span></div></div>'}).join('');
-    U.gistList.onclick=async function(e){var item=e.target.closest('.cnv');if(item){hide('gistMask');await dlById(item.dataset.gid,t)}};
-    show('gistMask')}catch(e){status('获取失败：'+e.message)}finally{U.sDown.disabled=false}}
-
-async function dlById(gid,t){status('下载中...');
-  try{var r=await fetch('https://api.github.com/gists/'+gid,{headers:{Authorization:'token '+t,Accept:'application/vnd.github.v3+json'}});
-    if(!r.ok)throw new Error('HTTP '+r.status);var gist=await r.json(),file=gist.files?.['data.json'];
-    if(!file?.content)throw new Error('文件为空');var data=JSON.parse(file.content);if(!confirm('覆盖本地数据？'))return;
-    if(data.settings){write(K.s,data.settings);initProfiles(data.settings);S.s=S.p.find(function(x){return x.id===S.ap});persistSettings();fillForm();refreshUI()}
-    if(data.conversations){write(K.c,data.conversations);S.c=normConv(data.conversations);S.ac=null;ensureConv();persistConv();renderConv();render()}
-    S.sy.g=gid;S.sy.at=new Date().toISOString();persistSy();updateSyncUI();status('恢复成功')}catch(e){status('下载失败：'+e.message)}}
 </script>
 </body>
 </html>
