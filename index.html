@@ -263,7 +263,7 @@ function tB(t){
 }
 function inline(t){
   var h=esc(t);
-  h=h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+  h=h.replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
   h=h.replace(/`([^`]+)`/g,'<code>$1</code>');
   h=h.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
   h=h.replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>');
@@ -481,26 +481,43 @@ var syncTimer=null,syncing=false;
 
 function scheduleSync(){if(!S.sy.t)return;clearTimeout(syncTimer);syncTimer=setTimeout(autoUpload,3000)}
 
+async function findGist(){
+  try{var r=await fetch('https://api.github.com/gists?per_page=100',{headers:{Authorization:'token '+S.sy.t,Accept:'application/vnd.github.v3+json'}});
+    if(!r.ok)return null;var gs=await r.json();var f=gs.find(function(g){return g.description==='AI Chat Lite Auto Backup'&&g.files&&g.files['data.json']});return f?f.id:null}
+  catch(e){return null}}
+
 async function autoUpload(){
   if(!S.sy.t||syncing)return;syncing=true;updateSyncStatus('syncing');
-  try{var data={syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};
+  try{
+    if(!S.sy.g){var eid=await findGist();if(eid){S.sy.g=eid;persistSy()}}
+    var data={syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};
     var url=S.sy.g?'https://api.github.com/gists/'+S.sy.g:'https://api.github.com/gists';
     var r=await fetch(url,{method:S.sy.g?'PATCH':'POST',headers:{Authorization:'token '+S.sy.t,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Auto Backup',public:false,files:{'data.json':{content:JSON.stringify(data,null,2)}}})});
     if(!r.ok)throw new Error('HTTP '+r.status);var j=await r.json();if(!S.sy.g)S.sy.g=j.id;
-    S.sy.at=new Date().toISOString();persistSy();updateSyncStatus('ok')}
+    S.sy.at=new Date().toISOString();persistSy();updateSyncStatus('ok');status('已同步到云端')}
   catch(e){updateSyncStatus('error');console.error('Sync failed:',e)}
   finally{syncing=false}}
 
 async function autoDownload(){
-  if(!S.sy.t||!S.sy.g)return;syncing=true;updateSyncStatus('syncing');
-  try{var r=await fetch('https://api.github.com/gists/'+S.sy.g,{headers:{Authorization:'token '+S.sy.t,Accept:'application/vnd.github.v3+json'}});
-    if(!r.ok)throw new Error('HTTP '+r.status);var gist=await r.json(),file=gist.files?.['data.json'];
-    if(!file?.content)return;var data=JSON.parse(file.content);
+  if(!S.sy.t)return;syncing=true;updateSyncStatus('syncing');
+  try{
+    if(!S.sy.g){
+      var eid=await findGist();
+      if(eid){S.sy.g=eid;persistSy()}
+      else{syncing=false;updateSyncStatus('ok');status('已配置，将自动同步');return}
+    }
+    var r=await fetch('https://api.github.com/gists/'+S.sy.g,{headers:{Authorization:'token '+S.sy.t,Accept:'application/vnd.github.v3+json'}});
+    if(!r.ok){
+      if(r.status===404){S.sy.g='';persistSy();syncing=false;updateSyncStatus('ok');return}
+      throw new Error('HTTP '+r.status)}
+    var gist=await r.json(),file=gist.files?.['data.json'];
+    if(!file?.content){syncing=false;updateSyncStatus('ok');return}
+    var data=JSON.parse(file.content);
     var remoteTime=new Date(data.syncedAt||0).getTime(),localTime=S.sy.at?new Date(S.sy.at).getTime():0;
     if(remoteTime>localTime){
-      if(data.settings){write(K.s,data.settings);initProfiles(data.settings);S.s=S.p.find(function(x){return x.id===S.ap});persistSettings();fillForm();refreshUI()}
-      if(data.conversations){write(K.c,data.conversations);S.c=normConv(data.conversations);S.ac=null;ensureConv();persistConv();renderConv();render()}
-      S.sy.at=data.syncedAt;persistSy();updateSyncStatus('ok');status('已从云端恢复')}
+      if(data.settings){write(K.s,data.settings);initProfiles(data.settings);S.s=S.p.find(function(x){return x.id===S.ap});fillForm();refreshUI()}
+      if(data.conversations){write(K.c,data.conversations);S.c=normConv(data.conversations);S.ac=null;ensureConv();renderConv();render()}
+      S.sy.at=data.syncedAt;persistSy();updateSyncStatus('ok');status('已从云端恢复 '+S.c.length+' 个对话')}
     else{updateSyncStatus('ok');autoUpload()}}
   catch(e){updateSyncStatus('error');console.error('Download failed:',e)}
   finally{syncing=false}}
