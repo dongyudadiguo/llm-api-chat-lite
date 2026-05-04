@@ -297,7 +297,6 @@ if(!S.s?.apiKey||!S.s?.baseUrl||!S.s?.model)status('请先配置接口');
 U.sToken.value=S.sy.t||'';updateSyncUI();bind();
 if(S.sy.t&&S.sy.g)autoDownload();
 
-// ====== 新增：复制对话到剪贴板 ======
 function copyConv(id){
   var c=S.c.find(function(x){return x.id===id});
   if(!c)return;
@@ -316,13 +315,11 @@ function copyConv(id){
   navigator.clipboard.writeText(text).then(function(){
     status('已复制「'+c.title+'」到剪贴板（'+c.messages.filter(function(m){return!m.hidden&&!m.pending&&m.role!=='tool'&&m.role!=='tool_status'}).length+' 条）');
   }).catch(function(){
-    // fallback
     var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();
     status('已复制「'+c.title+'」');
   });
 }
 
-// ====== 新增：复制单条消息 ======
 function copyMsg(id){
   var c=aConv();if(!c)return;
   var m=c.messages.find(function(x){return x.id===id});
@@ -350,7 +347,6 @@ function bind(){
     var sa=e.target.closest('.sa-btn');if(sa){showAll();return}
     var cp=e.target.closest('.cb-cp');if(cp){var cb=cp.closest('.cb');var pre=cb.querySelector('pre');navigator.clipboard.writeText(pre?pre.textContent.replace(/\n$/,''):'');cp.textContent='已复制';setTimeout(function(){cp.textContent='复制'},1500);return}
     var dl=e.target.closest('.cb-dl');if(dl){var cb=dl.closest('.cb');var pre=cb.querySelector('pre');var txt=pre?pre.textContent.replace(/\n$/,''):'';var ext=langExt(cb.dataset.lang);var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));a.download='code.'+ext;a.click();return}
-    // ====== 新增：单条消息复制 ======
     var mc=e.target.closest('[data-copy-msg]');if(mc){copyMsg(mc.dataset.copyMsg);var btn=mc;btn.textContent='已复制';setTimeout(function(){btn.textContent='复制'},1500);return}
   };
   U.msgs.onscroll=function(){var el=U.msgs,at=el.scrollHeight-el.scrollTop-el.clientHeight<80;ascroll=at;if(!at)sst=el.scrollTop;var c=aConv(),empty=!c||c.messages.filter(function(x){return!x.pending}).length===0;if(at||S.ctl||empty)U.form.classList.remove('off');else if(!U.prompt.value.trim()&&document.activeElement!==U.prompt)U.form.classList.add('off')};
@@ -361,7 +357,6 @@ function bind(){
     var item=e.target.closest('.cnv');if(!item)return;
     if(e.target.closest('.x')){delConv(item.dataset.id);return}
     if(e.target.closest('.rn')){renameConv(item.dataset.id);return}
-    // ====== 新增：侧边栏复制按钮 ======
     if(e.target.closest('.cp')){copyConv(item.dataset.id);return}
     selConv(item.dataset.id);U.sb.classList.remove('open')
   };
@@ -394,7 +389,6 @@ function createProfile(){var n=(U.pName.value.trim()||S.s.name)+' 副本';var na
 function deleteProfile(){if(S.p.length<=1)return status('至少保留一个方案');if(!confirm('删除「'+S.s.name+'」？'))return;var i=S.p.findIndex(function(x){return x.id===S.s.id});S.p.splice(i,1);S.ap=(S.p[i]||S.p[i-1]||S.p[0]).id;S.s=S.p.find(function(x){return x.id===S.ap});persistSettings();fillForm();refreshUI()}
 function refreshUI(){U.pInfo.textContent=S.s?.name||'默认';U.mInfo.textContent=S.s?.model||'未配置';U.send.textContent=S.ctl?'停止':'发送';U.send.className='btn-s'+(S.ctl?' stop':'')}
 
-// ====== 修改：renderConv 加入复制按钮 ======
 function renderConv(){U.convList.innerHTML=S.c.map(function(c){
   var on=c.id===S.ac,total=c.messages.filter(function(x){return!x.pending}).length,hid=c.messages.filter(function(x){return x.hidden}).length;
   var meta=hid?(total-hid)+' 条 · '+hid+' 隐藏':total+' 条';
@@ -511,13 +505,11 @@ function render(opts){
 
 function emptyH(){return'<div class="stack"><div class="empty"><h2>AI Chat Lite</h2><p>轻量、实用的 AI 对话工具。配置接口后即可开始。</p><div class="chips"><button class="chip" data-sug="帮我总结下面这段内容：">总结内容</button><button class="chip" data-sug="请解释这段代码：">解释代码</button><button class="chip" data-sug="帮我写一段产品介绍文案。">生成文案</button></div></div></div>'}
 
-// ====== 修改：vMsg 加入单条消息复制按钮 ======
 function vMsg(m){
   if(m.role==='tool_status')return'<div class="msg"><div class="msg-bd tbd">'+esc(m.content)+'</div></div>';
   var u=m.role==='user',cls='msg '+(u?'u':'a')+(m.error?' err':'')+(m.pending?' p':'');
   var pf=!u&&!m.pending&&!m.error&&m.latency!=null?'<span class="msg-pf">'+m.latency+'ms · '+(m.speed||0)+' 字/s</span>':'';
   var hide='';if(!m.pending){if(u)hide='<button class="msg-hide" data-hide="'+m.id+'">隐藏</button>';else if(m.role==='assistant'&&!m.error&&m.content?.trim())hide='<button class="msg-hide" data-ha="'+m.id+'">隐藏</button>'}
-  // 新增：复制按钮（hover 时显示）
   var cpBtn=m.content&&!m.pending?'<button class="msg-hide" data-copy-msg="'+m.id+'">复制</button>':'';
   var bd=m.pending&&!m.content?'<div class="typing"><span></span><span></span><span></span></div>':(u?'<p>'+esc(m.content).replace(/\n/g,'<br>')+'</p>':renderMd(m.content));
   return'<div class="'+cls+'" data-mid="'+m.id+'"><div class="msg-hd"><span class="msg-av">'+(u?'U':'AI')+'</span><span class="msg-nm">'+(u?'你':'AI')+'</span>'+cpBtn+hide+pf+'<span class="msg-tm">'+fmtT(m.time)+'</span></div><div class="msg-bd">'+bd+'</div></div>'}
@@ -531,7 +523,6 @@ function applyCollapse(){var ch=240;
 
 function updStream(ai){var el=$('[data-mid="'+ai.id+'"]');if(!el){render();return}var bd=el.querySelector('.msg-bd');if(!bd)return;bd.innerHTML=renderMd(ai.content)}
 
-// ====== 自动同步 ======
 var syncTimer=null,syncing=false;
 
 function scheduleSync(){if(!S.sy.t)return;clearTimeout(syncTimer);syncTimer=setTimeout(autoUpload,3000)}
@@ -567,7 +558,17 @@ async function autoDownload(){
       throw new Error('HTTP '+r.status)}
     var gist=await r.json(),file=gist.files?.['data.json'];
     if(!file?.content){syncing=false;updateSyncStatus('ok');return}
-    var data=JSON.parse(file.content);
+
+    var content;
+    if(file.truncated&&file.raw_url){
+      var rawRes=await fetch(file.raw_url);
+      if(!rawRes.ok)throw new Error('HTTP '+rawRes.status);
+      content=await rawRes.text();
+    }else{
+      content=file.content;
+    }
+
+    var data=JSON.parse(content);
     var remoteTime=new Date(data.syncedAt||0).getTime(),localTime=S.sy.at?new Date(S.sy.at).getTime():0;
     if(remoteTime>localTime){
       if(data.settings){write(K.s,data.settings);initProfiles(data.settings);S.s=S.p.find(function(x){return x.id===S.ap});fillForm();refreshUI()}
