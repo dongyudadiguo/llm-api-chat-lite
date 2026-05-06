@@ -270,7 +270,7 @@ function inline(t){
   return h;
 }
 
-var K={s:'ai-chat-lite:settings',c:'ai-chat-lite:conversations',y:'ai-chat-lite:sync',d:'ai-chat-lite:dirty'};
+var K={s:'ai-chat-lite:settings',c:'ai-chat-lite:conversations',y:'ai-chat-lite:sync'};
 var DF={baseUrl:'https://api.openai.com/v1',apiKey:'',model:'gpt-4.1-mini',systemPrompt:'你是一个专业、准确、简洁的 AI 助手。',temperature:.7};
 var TOOLS=[{type:'function',function:{name:'fetch_url',description:'获取网页内容',parameters:{type:'object',properties:{url:{type:'string'}},required:['url']}}}];
 var $=function(s){return document.querySelector(s)};
@@ -280,7 +280,7 @@ var write=function(k,v){localStorage.setItem(k,JSON.stringify(v))};
 var uid=function(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)};
 
 var S={p:[],ap:null,s:null,c:[],ac:null,ctl:null,sy:read(K.y,{t:'',g:'',at:null})};
-var ascroll=true,sst=0,initing=false,dirty=localStorage.getItem(K.d)==='1';
+var ascroll=true,sst=0,initing=false;
 var exp=new Set();
 
 var U={msgs:$('#messages'),form:$('#form'),prompt:$('#prompt'),send:$('#sendBtn'),st:$('#status'),
@@ -295,7 +295,7 @@ initing=true;var raw=read(K.s,null);initProfiles(raw);S.c=normConv(read(K.c,[]))
 fillForm();renderConv();render();refreshUI();
 if(!S.s?.apiKey||!S.s?.baseUrl||!S.s?.model)status('请先配置接口');
 U.sToken.value=S.sy.t||'';updateSyncUI();bind();
-if(S.sy.t&&S.sy.g)autoDownload();
+if(S.sy.t)syncPull();
 
 function copyConv(id){
   var c=S.c.find(function(x){return x.id===id});
@@ -363,7 +363,7 @@ function bind(){
   document.onclick=function(e){if(U.sb.classList.contains('open')&&!U.sb.contains(e.target)&&!U.menuBtn.contains(e.target))U.sb.classList.remove('open')};
   U.syncBtn.onclick=function(){show('syncMask')};U.syncX.onclick=U.syncC.onclick=function(){hide('syncMask')};
   U.syncMask.onmousedown=function(e){if(e.target===U.syncMask)hide('syncMask')};
-  U.sToken.oninput=function(){S.sy.t=U.sToken.value.trim();persistSy();if(S.sy.t){updateSyncStatus('syncing');autoDownload()}else updateSyncStatus('off')};
+  U.sToken.oninput=function(){S.sy.t=U.sToken.value.trim();persistSy();if(S.sy.t){updateSyncUI('syncing');syncPull().then(syncPush)}else updateSyncUI()};
 }
 
 function langExt(l){var m={javascript:'js',typescript:'ts',python:'py',java:'java',c:'c',cpp:'cpp',csharp:'cs',go:'go',rust:'rs',ruby:'rb',php:'php',swift:'swift',kotlin:'kt',html:'html',css:'css',json:'json',xml:'xml',yaml:'yml',sql:'sql',shell:'sh',bash:'sh',vue:'vue',jsx:'jsx',tsx:'tsx',markdown:'md'};return m[(l||'').toLowerCase()]||'txt'}
@@ -380,7 +380,7 @@ function initProfiles(raw){
   S.s=S.p.find(function(x){return x.id===S.ap})||S.p[0];S.ap=S.s.id;
 }
 function normProfile(v){return{id:v.id||'p_'+uid(),name:(v.name||'默认方案').trim(),baseUrl:(v.baseUrl||DF.baseUrl).trim(),apiKey:(v.apiKey||'').trim(),model:(v.model||DF.model).trim(),systemPrompt:(v.systemPrompt||DF.systemPrompt).trim(),temperature:Math.max(0,Math.min(2,Number(v.temperature)??DF.temperature))}}
-function persistSettings(){write(K.s,{activeProfileId:S.ap,profiles:S.p.map(function(x){return{id:x.id,name:x.name,baseUrl:x.baseUrl,apiKey:x.apiKey,model:x.model,systemPrompt:x.systemPrompt,temperature:x.temperature}})});markLU();scheduleSync()}
+function persistSettings(){write(K.s,{activeProfileId:S.ap,profiles:S.p.map(function(x){return{id:x.id,name:x.name,baseUrl:x.baseUrl,apiKey:x.apiKey,model:x.model,systemPrompt:x.systemPrompt,temperature:x.temperature}})});markDirty('s')}
 function fillForm(){U.pSel.innerHTML=S.p.map(function(x){return'<option value="'+x.id+'">'+esc(x.name)+'</option>'}).join('');U.pSel.value=S.ap;U.pDel.disabled=S.p.length<=1;U.pName.value=S.s.name;U.pUrl.value=S.s.baseUrl;U.pKey.value=S.s.apiKey;U.pModel.value=S.s.model;U.pSys.value=S.s.systemPrompt;U.pTemp.value=Number(S.s.temperature).toFixed(1)}
 function formVal(){return{name:(U.pName.value||'未命名').trim(),baseUrl:U.pUrl.value.trim(),apiKey:U.pKey.value.trim(),model:U.pModel.value.trim(),systemPrompt:U.pSys.value.trim(),temperature:Math.max(0,Math.min(2,Number(U.pTemp.value)||.7))}}
 function saveSettings(){Object.assign(S.s,formVal());persistSettings();fillForm();refreshUI();hide('mask');status('已保存「'+S.s.name+'」');U.prompt.focus()}
@@ -399,10 +399,10 @@ function fmtD(v){try{var d=new Date(v),n=new Date();if(d.toDateString()===n.toDa
 function normConv(a){return Array.isArray(a)?a.filter(function(x){return x?.id&&Array.isArray(x.messages)}).map(function(x){return{id:x.id,title:x.title||'新对话',messages:normMsg(x.messages),createdAt:x.createdAt||new Date().toISOString(),updatedAt:x.updatedAt||new Date().toISOString(),titleGenerated:!!x.titleGenerated}}):[]}
 function normMsg(a){return Array.isArray(a)?a.filter(function(x){return x?.role&&typeof x.content==='string'}).map(function(x){return{id:x.id||'m_'+uid(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null,hidden:!!x.hidden}}):[]}
 function ensureConv(){if(!S.c.length){var c={id:'c_'+uid(),title:'新对话',messages:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),titleGenerated:false};S.c.push(c);S.ac=c.id;persistConv()}if(!S.ac||!S.c.find(function(x){return x.id===S.ac}))S.ac=S.c[0]?.id}
-function persistConv(){write(K.c,S.c.map(function(c){return{id:c.id,title:c.title,messages:c.messages.map(function(m){var o={id:m.id,role:m.role,content:m.content,time:m.time,error:!!m.error};if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;if(m.hidden)o.hidden=true;return o}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated}}));markLU();scheduleSync()}
+function persistConv(){write(K.c,S.c.map(function(c){return{id:c.id,title:c.title,messages:c.messages.map(function(m){var o={id:m.id,role:m.role,content:m.content,time:m.time,error:!!m.error};if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;if(m.hidden)o.hidden=true;return o}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated}}));if(S.ac)markDirty('c',S.ac)}
 function newConv(){if(S.ctl)S.ctl.abort();S.ctl=null;var c={id:'c_'+uid(),title:'新对话',messages:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),titleGenerated:false};S.c.unshift(c);S.ac=c.id;exp.clear();ascroll=true;sst=0;persistConv();renderConv();render();refreshUI();status('新对话');U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus()}
-function selConv(id){if(id===S.ac)return;if(S.ctl)S.ctl.abort();S.ctl=null;S.ac=id;exp.clear();ascroll=true;sst=0;persistConv();renderConv();render();refreshUI();U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus()}
-function delConv(id){if(S.c.length<=1)return status('至少保留一个对话');var c=S.c.find(function(x){return x.id===id});if(!confirm('删除「'+(c?c.title:'')+'」？'))return;var i=S.c.findIndex(function(x){return x.id===id});S.c.splice(i,1);if(id===S.ac)S.ac=(S.c[i]||S.c[i-1]||S.c[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistConv();renderConv();render();refreshUI()}
+function selConv(id){if(id===S.ac)return;if(S.ctl)S.ctl.abort();S.ctl=null;S.ac=id;exp.clear();ascroll=true;sst=0;renderConv();render();refreshUI();U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus()}
+function delConv(id){if(S.c.length<=1)return status('至少保留一个对话');var c=S.c.find(function(x){return x.id===id});if(!confirm('删除「'+(c?c.title:'')+'」？'))return;var i=S.c.findIndex(function(x){return x.id===id});S.c.splice(i,1);markDirty('c',id);if(id===S.ac)S.ac=(S.c[i]||S.c[i-1]||S.c[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistConv();renderConv();render();refreshUI()}
 function renameConv(id){var c=S.c.find(function(x){return x.id===id});if(!c)return;var t=prompt('新标题：',c.title);if(t===null||!t.trim())return;c.title=t.trim();c.updatedAt=new Date().toISOString();persistConv();renderConv()}
 
 function toggleHide(id){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===id});if(i===-1||c.messages[i].role!=='user')return;var h=!c.messages[i].hidden;for(var j=i;j<c.messages.length;j++){if(j>i&&c.messages[j].role==='user')break;c.messages[j].hidden=h}persistConv();renderConv();render()}
@@ -523,71 +523,72 @@ function applyCollapse(){var ch=240;
 
 function updStream(ai){var el=$('[data-mid="'+ai.id+'"]');if(!el){render();return}var bd=el.querySelector('.msg-bd');if(!bd)return;bd.innerHTML=renderMd(ai.content)}
 
-var syncTimer=null,syncing=false;
+/* ── Cloud Sync: per-conversation files, dirty tracking ── */
+var _dirty={},_st,_sy=false;
 
-function markLU(){dirty=true;localStorage.setItem(K.d,'1')}
+function markDirty(t,id){_dirty[t+(id?':'+id:'')]=1;schedulePush()}
 
-function scheduleSync(){if(!S.sy.t||!dirty)return;clearTimeout(syncTimer);syncTimer=setTimeout(autoUpload,3000)}
+function schedulePush(){if(!S.sy.t||initing)return;clearTimeout(_st);_st=setTimeout(syncPush,3000)}
 
-function clearDirty(){dirty=false;localStorage.removeItem(K.d)}
-
-async function findGist(){
-  try{var r=await fetch('https://api.github.com/gists?per_page=100',{headers:{Authorization:'token '+S.sy.t,Accept:'application/vnd.github.v3+json'}});
-    if(!r.ok)return null;var gs=await r.json();var f=gs.find(function(g){return g.description==='AI Chat Lite Auto Backup'&&g.files&&g.files['data.json']});return f?f.id:null}
-  catch(e){return null}}
-
-async function autoUpload(){
-  if(!S.sy.t||syncing)return;syncing=true;updateSyncStatus('syncing');
+async function syncPush(){
+  var keys=Object.keys(_dirty);
+  if(!S.sy.t||_sy||!keys.length)return;
+  _sy=true;updateSyncUI('syncing');
   try{
-    if(!S.sy.g){var eid=await findGist();if(eid){S.sy.g=eid;persistSy()}}
-    var data={syncedAt:new Date().toISOString(),settings:read(K.s,null),conversations:read(K.c,[])};
-    var url=S.sy.g?'https://api.github.com/gists/'+S.sy.g:'https://api.github.com/gists';
-    var r=await fetch(url,{method:S.sy.g?'PATCH':'POST',headers:{Authorization:'token '+S.sy.t,'Content-Type':'application/json',Accept:'application/vnd.github.v3+json'},body:JSON.stringify({description:'AI Chat Lite Auto Backup',public:false,files:{'data.json':{content:JSON.stringify(data,null,2)}}})});
-    if(!r.ok)throw new Error('HTTP '+r.status);var j=await r.json();if(!S.sy.g)S.sy.g=j.id;
-    S.sy.at=new Date().toISOString();clearDirty();persistSy();updateSyncStatus('ok');status('已同步到云端')}
-  catch(e){updateSyncStatus('error');console.error('Sync failed:',e)}
-  finally{syncing=false}}
+    var gid=await gistId(),files={};
+    keys.forEach(function(k){
+      if(k==='s')files['settings.json']={content:JSON.stringify(read(K.s,null))};
+      else if(k.slice(0,2)==='c:'){var cid=k.slice(2),conv=S.c.find(function(x){return x.id===cid});files['c_'+cid+'.json']=conv?{content:JSON.stringify(conv)}:null}});
+    files['meta.json']={content:JSON.stringify({at:new Date().toISOString(),list:S.c.map(function(c){return{id:c.id,u:c.updatedAt}})})};
+    await api('gists/'+gid,'PATCH',{files:files});
+    _dirty={};S.sy.at=new Date().toISOString();persistSy();updateSyncUI('ok');status('已同步');
+  }catch(e){updateSyncUI('error')}
+  finally{_sy=false}}
 
-async function autoDownload(){
-  if(!S.sy.t)return;syncing=true;updateSyncStatus('syncing');
+async function syncPull(){
+  if(!S.sy.t||_sy)return;
+  _sy=true;updateSyncUI('syncing');
   try{
-    if(!S.sy.g){
-      var eid=await findGist();
-      if(eid){S.sy.g=eid;persistSy()}
-      else{syncing=false;updateSyncStatus('ok');status('已配置，将自动同步');return}
-    }
-    var r=await fetch('https://api.github.com/gists/'+S.sy.g,{headers:{Authorization:'token '+S.sy.t,Accept:'application/vnd.github.v3+json'}});
-    if(!r.ok){
-      if(r.status===404){S.sy.g='';persistSy();syncing=false;updateSyncStatus('ok');return}
-      throw new Error('HTTP '+r.status)}
-    var gist=await r.json(),file=gist.files?.['data.json'];
-    if(!file?.content){syncing=false;updateSyncStatus('ok');return}
+    var gid=await gistId(),gist=await api('gists/'+gid),files=gist.files||{};
+    var sf=files['settings.json'];
+    if(sf){var rs=sf.truncated&&sf.raw_url?JSON.parse(await(await fetch(sf.raw_url)).text()):JSON.parse(sf.content);
+      if(rs){write(K.s,rs);initProfiles(rs);S.s=S.p.find(function(x){return x.id===S.ap});fillForm();refreshUI()}}
+    var mf=files['meta.json'];
+    if(mf){var meta=mf.truncated&&mf.raw_url?JSON.parse(await(await fetch(mf.raw_url)).text()):JSON.parse(mf.content);
+      if(meta&&meta.list){
+        var localMap={};S.c.forEach(function(c){localMap[c.id]=c});
+        var remoteIds=new Set(),localOnly=[];
+        for(var i=0;i<meta.list.length;i++){var rc=meta.list[i];remoteIds.add(rc.id);
+          var cf=files['c_'+rc.id+'.json'];
+          if(cf){var need=!localMap[rc.id]||new Date(rc.u)>new Date(localMap[rc.id].updatedAt||0);
+            if(need){var cd=cf.truncated&&cf.raw_url?JSON.parse(await(await fetch(cf.raw_url)).text()):JSON.parse(cf.content);localMap[rc.id]=cd}}}
+        var merged=[];meta.list.forEach(function(rc){if(localMap[rc.id])merged.push(localMap[rc.id])});
+        var lastSync=S.sy.at?new Date(S.sy.at):null;
+        S.c.forEach(function(c){if(!remoteIds.has(c.id)&&(!lastSync||new Date(c.createdAt)>lastSync)){merged.push(c);localOnly.push(c.id)}});
+        write(K.c,merged);S.c=normConv(merged);localOnly.forEach(function(id){_dirty['c:'+id]=1});
+        S.ac=null;ensureConv();renderConv();render()}}
+    _dirty={};S.sy.at=new Date().toISOString();persistSy();updateSyncUI('ok');status('已从云端恢复');
+  }catch(e){if(String(e.message)==='404'){S.sy.g='';persistSy()}updateSyncUI('error')}
+  finally{_sy=false}}
 
-    var content;
-    if(file.truncated&&file.raw_url){
-      var rawRes=await fetch(file.raw_url);
-      if(!rawRes.ok)throw new Error('HTTP '+rawRes.status);
-      content=await rawRes.text();
-    }else{
-      content=file.content;
-    }
+async function gistId(){
+  if(S.sy.g)return S.sy.g;
+  try{for(var p=1;p<=3;p++){var list=await api('gists?per_page=100&page='+p);if(!list.length)break;
+    var found=list.find(function(g){return g.description==='AI Chat Lite'&&g.files&&g.files['meta.json']});
+    if(found){S.sy.g=found.id;persistSy();return found.id}}}catch(e){}
+  var created=await api('gists','POST',{description:'AI Chat Lite',public:false,files:{'meta.json':{content:'{"at":"'+new Date().toISOString()+'","list":[]}'}}});
+  S.sy.g=created.id;persistSy();return created.id}
 
-    var data=JSON.parse(content);
-    var remoteTime=new Date(data.syncedAt||0).getTime(),localTime=S.sy.at?new Date(S.sy.at).getTime():0;
-    if(remoteTime>localTime){
-      if(data.settings){write(K.s,data.settings);initProfiles(data.settings);S.s=S.p.find(function(x){return x.id===S.ap});fillForm();refreshUI()}
-      if(data.conversations){write(K.c,data.conversations);S.c=normConv(data.conversations);S.ac=null;ensureConv();renderConv();render()}
-      S.sy.at=data.syncedAt;clearDirty();persistSy();updateSyncStatus('ok');status('已从云端恢复 '+S.c.length+' 个对话')}
-    else{updateSyncStatus('ok');if(dirty)autoUpload()}}
-  catch(e){updateSyncStatus('error');console.error('Download failed:',e)}
-  finally{syncing=false}}
-
-function updateSyncStatus(s){var map={off:'未配置',syncing:'同步中…',ok:'已同步',error:'同步失败'};
-  U.sStat.textContent=map[s]||s;U.sStat.style.color=s==='error'?'var(--d)':s==='ok'?'#4ade80':'var(--t3)';
-  U.syncBtn.style.color=s==='ok'?'#4ade80':s==='error'?'var(--d)':''}
+async function api(path,method,body){
+  var opts={method:method||'GET',headers:{Authorization:'token '+S.sy.t,Accept:'application/vnd.github.v3+json'}};
+  if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
+  var r=await fetch('https://api.github.com/'+path,opts);if(!r.ok)throw new Error(r.status);return r.json()}
 
 function persistSy(){write(K.y,{t:S.sy.t,g:S.sy.g,at:S.sy.at})}
-function updateSyncUI(){U.sStat.textContent=S.sy.at?fmtSy(S.sy.at):S.sy.t?'已配置':'未配置'}
+function updateSyncUI(s){
+  var m={syncing:'同步中…',ok:'已同步',error:'同步失败'},c={syncing:'var(--t3)',ok:'#4ade80',error:'var(--d)'};
+  U.sStat.textContent=s?(m[s]||s):(S.sy.at?fmtSy(S.sy.at):S.sy.t?'已配置':'未配置');
+  U.sStat.style.color=s?(c[s]||''):'';U.syncBtn.style.color=s==='ok'?'#4ade80':s==='error'?'var(--d)':''}
 function fmtSy(v){try{var d=new Date(v),diff=new Date()-d;if(diff<6e4)return'刚刚';if(diff<36e5)return Math.floor(diff/6e4)+' 分钟前';if(diff<864e5)return Math.floor(diff/36e5)+' 小时前';return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return'未知'}}
 </script>
 </body>
