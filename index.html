@@ -295,7 +295,8 @@ initing=true;var raw=read(K.s,null);initProfiles(raw);S.c=normConv(read(K.c,[]))
 fillForm();renderConv();render();refreshUI();
 if(!S.s?.apiKey||!S.s?.baseUrl||!S.s?.model)status('请先配置接口');
 U.sToken.value=S.sy.t||'';updateSyncUI();bind();
-if(S.sy.t)syncPull();
+/* FIX 3: 初始化时先 pull 再 push，确保拉取后本地数据能推送到远端 */
+if(S.sy.t)syncPull().then(syncPush);
 
 function copyConv(id){
   var c=S.c.find(function(x){return x.id===id});
@@ -554,6 +555,7 @@ async function syncPull(){
     if(sf){var rs=sf.truncated&&sf.raw_url?JSON.parse(await(await fetch(sf.raw_url)).text()):JSON.parse(sf.content);
       if(rs){write(K.s,rs);initProfiles(rs);S.s=S.p.find(function(x){return x.id===S.ap});fillForm();refreshUI()}}
     var mf=files['meta.json'];
+    /* FIX 2: 原代码此处是 sf.raw_url（读的是 settings 的 URL），应为 mf.raw_url */
     if(mf){var meta=mf.truncated&&mf.raw_url?JSON.parse(await(await fetch(mf.raw_url)).text()):JSON.parse(mf.content);
       if(meta&&meta.list){
         var localMap={};S.c.forEach(function(c){localMap[c.id]=c});
@@ -567,7 +569,10 @@ async function syncPull(){
         S.c.forEach(function(c){if(!remoteIds.has(c.id)&&(!lastSync||new Date(c.createdAt)>lastSync)){merged.push(c);localOnly.push(c.id)}});
         write(K.c,merged);S.c=normConv(merged);localOnly.forEach(function(id){_dirty['c:'+id]=1});
         S.ac=null;ensureConv();renderConv();render()}}
-    _dirty={};S.sy.at=new Date().toISOString();persistSy();updateSyncUI('ok');status('已从云端恢复');
+    /* FIX 1: 删除了此处的 _dirty={}
+       原代码在此处无条件清空 _dirty，导致 syncPull 标记的待推送数据被立刻抹掉。
+       _dirty 的清空由 syncPush 在成功推送后负责。 */
+    S.sy.at=new Date().toISOString();persistSy();updateSyncUI('ok');status('已从云端恢复');
   }catch(e){if(String(e.message)==='404'){S.sy.g='';persistSy()}updateSyncUI('error')}
   finally{_sy=false}}
 
