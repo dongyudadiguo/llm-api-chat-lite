@@ -8,9 +8,9 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/editor/editor.main.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-:root{color-scheme:dark;--bg:#09090b;--s:#18181b;--s2:#1e1e22;--s3:#27272a;--b:#27272a;--t:#fafafa;--t2:#a1a1aa;--t3:#52525b;--a:#3b82f6;--a2:#2563eb;--d:#ef4444;--f:-apple-system,system-ui,sans-serif;--m:'JetBrains Mono',Menlo,Consolas,monospace;--ch:240px}
+:root{color-scheme:dark;--bg:#09090b;--s:#18181b;--s2:#1e1e22;--s3:#27272a;--b:#27272a;--t:#fafafa;--t2:#a1a1aa;--t3:#52525b;--a:#3b82f6;--a2:#2563eb;--d:#ef4444;--f:-apple-system,system-ui,sans-serif;--m:'Fira Code',Menlo,Consolas,monospace;--ch:240px}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:var(--f);background:var(--bg);color:var(--t);font-size:15px;line-height:1.5}
 body{overflow:hidden}
@@ -205,7 +205,7 @@ function initCB(el){
   el.appendChild(ediv);
   var totalH=text.split('\n').length*18+16;
   if(totalH>400){var fade=document.createElement('div');fade.className='monaco-fade';el.appendChild(fade)}
-  try{monaco.editor.create(ediv,{value:text,language:mapLang(lang),theme:'chat-dark',readOnly:true,domReadOnly:true,minimap:{enabled:false},scrollBeyondLastLine:false,lineNumbers:'off',folding:false,wordWrap:'on',fontSize:13,fontFamily:"'JetBrains Mono',Menlo,Consolas,'Courier New',monospace",fontLigatures:true,scrollbar:{vertical:'auto',horizontal:'auto',verticalScrollbarSize:6,horizontalScrollbarSize:6},overviewRulerLanes:0,hideCursorInOverviewRuler:true,overviewRulerBorder:false,renderLineHighlight:'none',contextmenu:false,padding:{top:8,bottom:8},lineDecorationsWidth:0,lineNumbersMinChars:0,automaticLayout:true,renderIndentGuides:true,guides:{indentation:true,bracketPairs:false}});}
+  try{monaco.editor.create(ediv,{value:text,language:mapLang(lang),theme:'chat-dark',readOnly:true,domReadOnly:true,minimap:{enabled:false},scrollBeyondLastLine:false,lineNumbers:'off',folding:false,wordWrap:'on',fontSize:13,fontFamily:"'Fira Code',Menlo,Consolas,'Courier New',monospace",fontLigatures:true,scrollbar:{vertical:'auto',horizontal:'auto',verticalScrollbarSize:6,horizontalScrollbarSize:6},overviewRulerLanes:0,hideCursorInOverviewRuler:true,overviewRulerBorder:false,renderLineHighlight:'none',contextmenu:false,padding:{top:8,bottom:8},lineDecorationsWidth:0,lineNumbersMinChars:0,automaticLayout:true,renderIndentGuides:true,guides:{indentation:true,bracketPairs:false}});}
   catch(e){pre.style.display='';ediv.remove();el.dataset.monaco='';}
 }
 function initAllCB(){if(!monacoReady)return;document.querySelectorAll('.msg:not(.pending) .cb:not([data-monaco])').forEach(initCB)}
