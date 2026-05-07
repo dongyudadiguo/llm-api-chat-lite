@@ -482,34 +482,41 @@ function updStream(ai){var el=$('[data-mid="'+ai.id+'"]');if(!el){render();retur
 var _syncing=false;
 function persistSy(){write(K.y,{t:S.sy.t,g:S.sy.g})}
 function updateSyncUI(s){
-  var m={syncing:'同步中…',ok:'已同步',error:'同步失败'},c={syncing:'var(--t3)',ok:'#4ade80',error:'var(--d)'};
+  var m={syncing:'同步中…',ok:'已同步',empty:'未发现同步',error:'同步失败'},c={syncing:'var(--t3)',ok:'#4ade80',empty:'#f59e0b',error:'var(--d)'};
   U.sStat.textContent=s?(m[s]||s):(S.sy.t?'已配置':'未配置');
-  U.sStat.style.color=s?(c[s]||''):'';U.syncBtn.style.color=s==='ok'?'#4ade80':s==='error'?'var(--d)':''}
-
+  U.sStat.style.color=s?(c[s]||''):'';U.syncBtn.style.color=s==='ok'?'#4ade80':s==='error'?'var(--d)':s==='empty'?'#f59e0b':''}
+async function findSyncGist(){
+  for(var page=1;page<=20;page++){var list=await ghAPI('gists?per_page=100&page='+page);
+    var found=(list||[]).find(function(g){return g.description==='AI Chat Lite Sync'&&g.files&&g.files['sync.json']});
+    if(found)return found;if(!Array.isArray(list)||list.length<100)break}
+  return null}
 async function doSync(){
   if(!S.sy.t||_syncing)return;
   _syncing=true;updateSyncUI('syncing');
   try{
-    var gid=S.sy.g||null;
-    if(!gid){try{var list=await ghAPI('gists?per_page=100');var found=list.find(function(g){return g.description==='AI Chat Lite Sync'&&g.files&&g.files['sync.json']});if(found)gid=found.id}catch(e){}}
+    var gid=S.sy.g||null,hasRemote=false;
+    if(!gid){var found=await findSyncGist();if(found)gid=found.id}
     if(!gid){var c=await ghAPI('gists','POST',{description:'AI Chat Lite Sync',public:false,files:{'sync.json':{content:'{}'}}});gid=c.id}
     S.sy.g=gid;persistSy();
     var remote=null;
     try{var gist=await ghAPI('gists/'+gid),f=gist.files&&gist.files['sync.json'];
       if(f){var raw=f.truncated?f.raw_url?await(await fetch(f.raw_url)).text():'{}':f.content;remote=JSON.parse(raw)}}
-    catch(e){if(String(e.message)==='404'){S.sy.g='';persistSy();throw e}}
-    if(remote){
+    catch(e){if(String(e.message)==='404'){S.sy.g='';persistSy()}throw e}
+    hasRemote=!!(remote&&(remote.settings||Array.isArray(remote.conversations)));
+    if(hasRemote){
       if(remote.settings)write(K.s,remote.settings);
-      if(remote.conversations){var map={};S.c.forEach(function(c){map[c.id]=c});
+      if(Array.isArray(remote.conversations)){var map={};S.c.forEach(function(c){map[c.id]=c});
         remote.conversations.forEach(function(rc){if(!map[rc.id]||new Date(rc.updatedAt)>new Date(map[rc.id].updatedAt||0))map[rc.id]=rc});
         S.c=Object.values(map).filter(function(x){return x?.id&&Array.isArray(x.messages)}).map(function(x){return{id:x.id,title:x.title||'新对话',messages:(x.messages||[]).filter(function(m){return m?.role&&typeof m.content==='string'}).map(msgObj),createdAt:x.createdAt||new Date().toISOString(),updatedAt:x.updatedAt||new Date().toISOString(),titleGenerated:!!x.titleGenerated}})}
-      var raw2=read(K.s,null);if(raw2&&Array.isArray(raw2.profiles)){S.p=raw2.profiles.map(normP);S.ap=S.p.find(function(x){return x.id===raw2.activeProfileId})?raw2.activeProfileId:S.p[0]?.id}else{S.p=[normP(raw2||{})];S.ap=S.p[0].id}
+      var raw2=read(K.s,null);
+      if(raw2&&Array.isArray(raw2.profiles)){S.p=raw2.profiles.map(normP);S.ap=S.p.find(function(x){return x.id===raw2.activeProfileId})?raw2.activeProfileId:S.p[0]?.id}
+      else{S.p=[normP(raw2||{})];S.ap=S.p[0].id}
       S.s=S.p.find(function(x){return x.id===S.ap})||S.p[0];S.ap=S.s.id;
       S.ac=S.c.find(function(x){return x.id===S.ac})?S.ac:S.c[0]?.id;
       persistConv();fillForm();renderConv();render();refreshUI()}
     await ghAPI('gists/'+gid,'PATCH',{files:{'sync.json':{content:JSON.stringify({settings:read(K.s,null),conversations:S.c,ts:new Date().toISOString()})}}});
-    updateSyncUI('ok');status('已同步');
-  }catch(e){updateSyncUI('error');console.error('sync:',e)}
+    updateSyncUI(hasRemote?'ok':'empty');status(hasRemote?'已同步':'未发现云端同步，已上传当前本地数据')
+  }catch(e){updateSyncUI('error');status('同步失败：'+(e.message||e));console.error('sync:',e)}
   finally{_syncing=false}}
 
 async function ghAPI(path,method,body){
