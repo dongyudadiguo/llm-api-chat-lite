@@ -66,6 +66,13 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer;bo
 .hi span{flex:1}
 .hi button{color:var(--a);background:none;border:none;font-size:12px;cursor:pointer;padding:2px 8px;border-radius:4px}
 .hi button:hover{background:var(--s2);color:var(--t)}
+.sum{display:flex;align-items:flex-start;gap:8px;padding:8px 14px;border-radius:var(--r);border:1px dashed var(--b);background:var(--s);font-size:13px;color:var(--t3)}
+.sum .sum-icon{flex-shrink:0;font-size:13px;margin-top:1px}
+.sum .sum-txt{flex:1;line-height:1.6}
+.sum button{color:var(--a);background:none;border:none;font-size:12px;cursor:pointer;padding:3px 10px;border-radius:4px;white-space:nowrap;flex-shrink:0}
+.sum button:hover{background:var(--s2);color:var(--t)}
+.sep{border:none;height:1px;background:var(--b);margin:8px 0}
+.sub-lbl{font-size:13px;font-weight:600;color:var(--t2);margin:0 0 8px}
 .msg-bd.collapsed{max-height:var(--ch);overflow:hidden}
 .msg.u .msg-bd.collapsed::after{content:'';position:absolute;bottom:0;left:0;right:0;height:80px;background:linear-gradient(transparent,var(--s));pointer-events:none;border-radius:0 0 10px 10px}
 .clp{display:inline-block;padding:3px 0;margin-top:2px;font-size:13px;font-weight:500;color:var(--a);background:none;border:none;cursor:pointer}
@@ -169,6 +176,15 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer;bo
 <div class="field"><label>模型</label><input id="pModel" class="ti" placeholder="gpt-4.1-mini"></div>
 <div class="ff"><div class="field"><label>系统提示词</label><textarea id="pSys" class="ta" placeholder="你是一个专业、准确、简洁的 AI 助手。"></textarea></div></div>
 <div class="field"><label>Temperature</label><input id="pTemp" class="ti" type="number" min="0" max="2" step="0.1"></div>
+<div class="ff"><hr class="sep"></div>
+<div class="ff"><div class="sub-lbl">智能上下文管理</div></div>
+<div class="ff"><div class="field"><label><input type="checkbox" id="pAutoHide" style="vertical-align:middle;margin-right:6px">启用 AI 自动裁剪</label><span class="hint">AI 回复结束后，若上下文超过阈值，自动评估并隐藏早期低重要性消息</span></div></div>
+<div class="field"><label>字符阈值</label><input id="pThreshold" class="ti" type="number" min="10000" max="500000" step="10000" placeholder="60000"></div>
+<div class="field"><label>保护最近轮数</label><input id="pProtect" class="ti" type="number" min="1" max="15" step="1" placeholder="3"></div>
+<div class="ff"><div class="field"><label>评估模型 <span style="color:var(--t3);font-weight:400">留空用对话模型</span></label><input id="pEvalModel" class="ti" placeholder="gpt-4.1-mini"></div></div>
+<div class="ff"><div class="field"><label>评估接口 <span style="color:var(--t3);font-weight:400">留空用对话接口</span></label><input id="pEvalUrl" class="ti" placeholder="https://api.openai.com/v1"></div></div>
+<div class="ff"><div class="field"><label>评估 Key <span style="color:var(--t3);font-weight:400">留空用对话 Key</span></label><input id="pEvalKey" class="ti" type="password" placeholder="sk-..."></div></div>
+<div class="ff"><button class="btn" id="pTrimNow" style="margin-top:4px">立即裁剪当前对话</button></div>
 </div></div>
 <div class="mf"><span class="hint">部分 API 需要后端代理</span><div style="display:flex;gap:8px"><button class="btn" id="maskC">取消</button><button class="btn btn-p" id="maskS">保存</button></div></div>
 </div></div>
@@ -254,7 +270,7 @@ function mdBlock(t){
   fl();fq();return out.join('')||'<p></p>';
 }
 function inline(t){
-  return esc(t).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>')
+  return esc(t).replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>')
     .replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
     .replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>');
 }
@@ -296,16 +312,16 @@ U.sToken.value=S.sy.t||'';updateSyncUI();
 U.themeBtn.textContent=theme==='dark'?'☀':'☾';
 bind();if(S.sy.t)doSync();
 
-function normP(v){var temp=Number(v.temperature);return{id:v.id||'p_'+uid(),name:(v.name||'默认方案').trim(),baseUrl:(v.baseUrl||DF.baseUrl).trim(),apiKey:(v.apiKey||'').trim(),model:(v.model||DF.model).trim(),systemPrompt:(v.systemPrompt||DF.systemPrompt).trim(),temperature:Math.max(0,Math.min(2,isFinite(temp)?temp:DF.temperature))}}
-function msgObj(x){return{id:x.id||'m_'+uid(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null,hidden:!!x.hidden}}
-function mkMsg(role,content){return{id:'m_'+uid(),role:role,content:content||'',time:new Date().toISOString(),pending:false,error:false,toolCalls:null,toolCallId:null,toolName:null,toolUrl:null,hidden:false}}
+function normP(v){var temp=Number(v.temperature);return{id:v.id||'p_'+uid(),name:(v.name||'默认方案').trim(),baseUrl:(v.baseUrl||DF.baseUrl).trim(),apiKey:(v.apiKey||'').trim(),model:(v.model||DF.model).trim(),systemPrompt:(v.systemPrompt||DF.systemPrompt).trim(),temperature:Math.max(0,Math.min(2,isFinite(temp)?temp:DF.temperature)),autoHideEnabled:v.autoHideEnabled!==false,evalModel:(v.evalModel||'').trim(),evalBaseUrl:(v.evalBaseUrl||'').trim(),evalApiKey:(v.evalApiKey||'').trim(),contextThreshold:Number(v.contextThreshold)||60000,protectRecentRounds:Number(v.protectRecentRounds)||3}}
+function msgObj(x){return{id:x.id||'m_'+uid(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null,hidden:!!x.hidden,autoHidden:!!x.autoHidden,isSummary:!!x.isSummary}}
+function mkMsg(role,content){return{id:'m_'+uid(),role:role,content:content||'',time:new Date().toISOString(),pending:false,error:false,toolCalls:null,toolCallId:null,toolName:null,toolUrl:null,hidden:false,autoHidden:false,isSummary:false}}
 
-function saveProf(){write(K.s,{activeProfileId:S.ap,profiles:S.p.map(function(x){return{id:x.id,name:x.name,baseUrl:x.baseUrl,apiKey:x.apiKey,model:x.model,systemPrompt:x.systemPrompt,temperature:x.temperature}})});if(!initing&&!_applyingRemote){S.sy.sa=new Date().toISOString();persistSy()}scheduleSync(1200)}
-function fillForm(){U.pSel.innerHTML=S.p.map(function(x){return'<option value="'+x.id+'">'+esc(x.name)+'</option>'}).join('');U.pSel.value=S.ap;U.pDel.disabled=S.p.length<=1;U.pName.value=S.s.name;U.pUrl.value=S.s.baseUrl;U.pKey.value=S.s.apiKey;U.pModel.value=S.s.model;U.pSys.value=S.s.systemPrompt;U.pTemp.value=Number(S.s.temperature).toFixed(1)}
-function formVal(){var temp=Number(U.pTemp.value);return{name:(U.pName.value||'未命名').trim(),baseUrl:U.pUrl.value.trim(),apiKey:U.pKey.value.trim(),model:U.pModel.value.trim(),systemPrompt:U.pSys.value.trim(),temperature:Math.max(0,Math.min(2,isFinite(temp)?temp:.7))}}
+function saveProf(){write(K.s,{activeProfileId:S.ap,profiles:S.p.map(function(x){return{id:x.id,name:x.name,baseUrl:x.baseUrl,apiKey:x.apiKey,model:x.model,systemPrompt:x.systemPrompt,temperature:x.temperature,autoHideEnabled:x.autoHideEnabled,evalModel:x.evalModel,evalBaseUrl:x.evalBaseUrl,evalApiKey:x.evalApiKey,contextThreshold:x.contextThreshold,protectRecentRounds:x.protectRecentRounds}})});if(!initing&&!_applyingRemote){S.sy.sa=new Date().toISOString();persistSy()}scheduleSync(1200)}
+function fillForm(){U.pSel.innerHTML=S.p.map(function(x){return'<option value="'+x.id+'">'+esc(x.name)+'</option>'}).join('');U.pSel.value=S.ap;U.pDel.disabled=S.p.length<=1;U.pName.value=S.s.name;U.pUrl.value=S.s.baseUrl;U.pKey.value=S.s.apiKey;U.pModel.value=S.s.model;U.pSys.value=S.s.systemPrompt;U.pTemp.value=Number(S.s.temperature).toFixed(1);var ah=$('#pAutoHide'),pt=$('#pThreshold'),pp=$('#pProtect'),em=$('#pEvalModel'),eu=$('#pEvalUrl'),ek=$('#pEvalKey');if(ah)ah.checked=S.s.autoHideEnabled!==false;if(pt)pt.value=S.s.contextThreshold||60000;if(pp)pp.value=S.s.protectRecentRounds||3;if(em)em.value=S.s.evalModel||'';if(eu)eu.value=S.s.evalBaseUrl||'';if(ek)ek.value=S.s.evalApiKey||''}
+function formVal(){var temp=Number(U.pTemp.value),ah=$('#pAutoHide'),pt=$('#pThreshold'),pp=$('#pProtect'),em=$('#pEvalModel'),eu=$('#pEvalUrl'),ek=$('#pEvalKey');return{name:(U.pName.value||'未命名').trim(),baseUrl:U.pUrl.value.trim(),apiKey:U.pKey.value.trim(),model:U.pModel.value.trim(),systemPrompt:U.pSys.value.trim(),temperature:Math.max(0,Math.min(2,isFinite(temp)?temp:.7)),autoHideEnabled:ah?ah.checked:true,evalModel:(em?em.value:'').trim(),evalBaseUrl:(eu?eu.value:'').trim(),evalApiKey:(ek?ek.value:'').trim(),contextThreshold:Number(pt?pt.value:60000)||60000,protectRecentRounds:Number(pp?pp.value:3)||3}}
 function applyProf(p){S.ap=p.id;S.s=p;saveProf();fillForm();refreshUI()}
 
-function persistConv(){write(K.c,S.c.map(function(c){return{id:c.id,title:c.title,messages:c.messages.filter(function(m){return!m.pending&&m.role!=='tool_status'}).map(function(m){var o={id:m.id,role:m.role,content:m.content,time:m.time};if(m.error)o.error=true;if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;if(m.hidden)o.hidden=true;return o}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated}}));scheduleSync(1500)}
+function persistConv(){write(K.c,S.c.map(function(c){return{id:c.id,title:c.title,messages:c.messages.filter(function(m){return!m.pending&&m.role!=='tool_status'}).map(function(m){var o={id:m.id,role:m.role,content:m.content,time:m.time};if(m.error)o.error=true;if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;if(m.hidden)o.hidden=true;if(m.autoHidden)o.autoHidden=true;if(m.isSummary)o.isSummary=true;return o}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated}}));scheduleSync(1500)}
 function mkConv(){var c={id:'c_'+uid(),title:'新对话',messages:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),titleGenerated:false};S.c.unshift(c);S.ac=c.id;persistConv();return c}
 function aConv(){return S.c.find(function(x){return x.id===S.ac})}
 function langExt(l){var m={javascript:'js',typescript:'ts',python:'py',java:'java',c:'c',cpp:'cpp',csharp:'cs',go:'go',rust:'rs',ruby:'rb',php:'php',swift:'swift',kotlin:'kt',html:'html',css:'css',json:'json',xml:'xml',yaml:'yml',sql:'sql',shell:'sh',bash:'sh',vue:'vue',jsx:'jsx',tsx:'tsx',markdown:'md'};return m[(l||'').toLowerCase()]||'txt'}
@@ -316,8 +332,8 @@ function resize(){U.prompt.style.height='auto';U.prompt.style.height=Math.min(U.
 function refreshUI(){U.pInfo.textContent=S.s?.name||'默认';U.mInfo.textContent=S.s?.model||'未配置';U.send.textContent=S.ctl?'停止':'发送';U.send.className='btn-s'+(S.ctl?' stop':'')}
 
 function renderConv(){U.convList.innerHTML=S.c.map(function(c){
-  var on=c.id===S.ac,n=c.messages.filter(function(x){return!x.pending}).length,h=c.messages.filter(function(x){return x.hidden}).length;
-  return'<div class="cnv'+(on?' on':'')+'" data-id="'+c.id+'"><div class="tl">'+esc(c.title)+'</div><div class="mt"><span>'+(h?(n-h)+' 条 · '+h+' 隐藏':n+' 条')+'</span><span>'+fmtD(c.updatedAt)+'</span></div><div class="ac"><button class="cp">复制</button><button class="rn">重命名</button><button class="x">删除</button></div></div>'
+  var on=c.id===S.ac,n=c.messages.filter(function(x){return!x.pending}).length,h=c.messages.filter(function(x){return x.hidden}).length,ah=c.messages.filter(function(x){return x.autoHidden}).length;
+  return'<div class="cnv'+(on?' on':'')+'" data-id="'+c.id+'"><div class="tl">'+esc(c.title)+'</div><div class="mt"><span>'+(h?(n-h)+' 条 · '+h+' 隐藏':n+' 条')+(ah?' · '+ah+' 裁剪':'')+'</span><span>'+fmtD(c.updatedAt)+'</span></div><div class="ac"><button class="cp">复制</button><button class="rn">重命名</button><button class="x">删除</button></div></div>'
 }).join('')}
 function fmtD(v){try{var d=new Date(v),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});if(new Date(n-864e5).toDateString()===d.toDateString())return'昨天';return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}catch(e){return''}}
 
@@ -333,6 +349,8 @@ function bind(){
   U.pDel.onclick=function(){if(S.p.length<=1)return status('至少保留一个方案');if(!confirm('删除「'+S.s.name+'」？'))return;var i=S.p.findIndex(function(x){return x.id===S.s.id});S.p.splice(i,1);applyProf(S.p[i]||S.p[i-1]||S.p[0])};
   U.mask.onmousedown=function(e){if(e.target===U.mask)hide('mask')};
   U.msgs.onclick=function(e){
+    var se=e.target.closest('.sum-expand');
+    if(se){var c=aConv();if(!c)return;c.messages.forEach(function(m){if(m.autoHidden){m.hidden=false;m.autoHidden=false}});c.messages=c.messages.filter(function(m){return!m.isSummary});c.updatedAt=new Date().toISOString();persistConv();renderConv();render();return}
     var t=e.target.closest('[data-sug]');if(t){U.prompt.value=t.dataset.sug;resize();U.prompt.focus();return}
     var cl=e.target.closest('.clp');if(cl){var bd=cl.previousElementSibling;if(!bd)return;var id=bd.closest('.msg')?.dataset.mid;var on=bd.classList.toggle('collapsed');if(id){if(on)exp.delete(id);else exp.add(id)}cl.textContent=on?'展开全文':'收起';return}
     var h=e.target.closest('[data-hide]');if(h){toggleHide(h.dataset.hide);return}
@@ -351,19 +369,52 @@ function bind(){
     var item=e.target.closest('.cnv');if(!item)return;
     if(e.target.closest('.x')){var id=item.dataset.id;if(S.c.length<=1)return status('至少保留一个对话');var c=S.c.find(function(x){return x.id===id});if(!confirm('删除「'+(c?c.title:'')+'」？'))return;var i=S.c.findIndex(function(x){return x.id===id});S.sy.d[id]=new Date().toISOString();persistSy();S.c.splice(i,1);if(id===S.ac)S.ac=(S.c[i]||S.c[i-1]||S.c[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistConv();renderConv();render();refreshUI();return}
     if(e.target.closest('.rn')){var c=S.c.find(function(x){return x.id===item.dataset.id});if(!c)return;var t=prompt('新标题：',c.title);if(t===null||!t.trim())return;c.title=t.trim();c.updatedAt=new Date().toISOString();persistConv();renderConv();return}
-    if(e.target.closest('.cp')){var c=S.c.find(function(x){return x.id===item.dataset.id});if(!c)return;var lines=['# '+c.title,''];c.messages.forEach(function(m){if(m.hidden||m.pending||m.role==='tool'||m.role==='tool_status')return;lines.push('**'+(m.role==='user'?'你':'AI')+'：**',m.content||'','')});var text=lines.join('\n').trim();if(!text)return status('无可复制内容');clipCopy(text).then(function(){status('已复制「'+c.title+'」')});return}
+    if(e.target.closest('.cp')){var c=S.c.find(function(x){return x.id===item.dataset.id});if(!c)return;var lines=['# '+c.title,''];c.messages.forEach(function(m){if(m.hidden||m.pending||m.role==='tool'||m.role==='tool_status'||m.isSummary)return;lines.push('**'+(m.role==='user'?'你':'AI')+'：**',m.content||'','')});var text=lines.join('\n').trim();if(!text)return status('无可复制内容');clipCopy(text).then(function(){status('已复制「'+c.title+'」')});return}
     if(item.dataset.id===S.ac)return;if(S.ctl)S.ctl.abort();S.ctl=null;S.ac=item.dataset.id;exp.clear();ascroll=true;sst=0;renderConv();render();refreshUI();U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus();U.sb.classList.remove('open')
   };
   document.onclick=function(e){if(U.sb.classList.contains('open')&&!U.sb.contains(e.target)&&!U.menuBtn.contains(e.target))U.sb.classList.remove('open')};
   U.syncBtn.onclick=function(){show('syncMask');if(S.sy.t)scheduleSync(0)};U.syncX.onclick=U.syncC.onclick=function(){hide('syncMask')};
   U.syncMask.onmousedown=function(e){if(e.target===U.syncMask)hide('syncMask')};
   U.sToken.oninput=function(){var old=S.sy.t;S.sy.t=U.sToken.value.trim();if(old!==S.sy.t){S.sy.g=''}persistSy();if(S.sy.t){updateSyncUI('syncing');scheduleSync(800)}else updateSyncUI()};
+  var pTrim=$('#pTrimNow');if(pTrim)pTrim.onclick=function(){if(_evaluating)return status('正在评估中，请稍候');var c=aConv();if(!c)return status('无对话');var total=estimateChars(c.messages);if(total<=(S.s.contextThreshold||60000))return status('未超过阈值 ('+Math.round(total/1000)+'k)');_evaluating=true;pTrim.disabled=true;pTrim.textContent='评估中...';evaluateContext(c).then(function(r){if(r&&r.canHide&&r.canHide.length){applyAutoHide(c,r);renderConv();render();status('已隐藏 '+r.canHide.length+' 条')}else status('评估完成，无需裁剪')}).catch(function(e){status('评估失败：'+(e.message||e))}).finally(function(){_evaluating=false;pTrim.disabled=false;pTrim.textContent='立即裁剪当前对话'})};
 }
 
-function toggleHide(id){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===id});if(i===-1||c.messages[i].role!=='user')return;var h=!c.messages[i].hidden;for(var j=i;j<c.messages.length;j++){if(j>i&&c.messages[j].role==='user')break;c.messages[j].hidden=h}c.updatedAt=new Date().toISOString();persistConv();renderConv();render()}
+function toggleHide(id){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===id});if(i===-1||c.messages[i].role!=='user')return;var h=!c.messages[i].hidden;for(var j=i;j<c.messages.length;j++){if(j>i&&c.messages[j].role==='user')break;c.messages[j].hidden=h;if(!h)c.messages[j].autoHidden=false}c.updatedAt=new Date().toISOString();persistConv();renderConv();render()}
 function hideFromAsst(aid){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===aid});if(i===-1)return;for(var j=i;j>=0;j--)if(c.messages[j].role==='user'){toggleHide(c.messages[j].id);return}}
-function showHidden(from){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===from});if(i===-1)return;for(var j=i;j<c.messages.length;j++){if(!c.messages[j].hidden)break;c.messages[j].hidden=false}c.updatedAt=new Date().toISOString();persistConv();renderConv();render();setTimeout(function(){var el=$('[data-mid="'+from+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'center'})},50)}
-function showAll(){var c=aConv();if(!c)return;var ch=false;c.messages.forEach(function(m){if(m.hidden){m.hidden=false;ch=true}});if(ch){c.updatedAt=new Date().toISOString();persistConv();renderConv();render()}}
+function showHidden(from){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===from});if(i===-1)return;for(var j=i;j<c.messages.length;j++){if(!c.messages[j].hidden)break;c.messages[j].hidden=false;c.messages[j].autoHidden=false}c.updatedAt=new Date().toISOString();persistConv();renderConv();render();setTimeout(function(){var el=$('[data-mid="'+from+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'center'})},50)}
+function showAll(){var c=aConv();if(!c)return;var ch=false;c.messages.forEach(function(m){if(m.hidden||m.autoHidden){m.hidden=false;m.autoHidden=false;ch=true}});var bl=c.messages.length;c.messages=c.messages.filter(function(m){return!m.isSummary});if(c.messages.length!==bl)ch=true;if(ch){c.updatedAt=new Date().toISOString();persistConv();renderConv();render()}}
+
+/* ── 智能上下文评估 ── */
+function estimateChars(msgs){return msgs.reduce(function(s,m){if(m.hidden||m.autoHidden)return s;return s+(m.content||'').length},0)}
+
+function buildEvalPayload(conv){var prot=(S.s.protectRecentRounds||3)*2,msgs=conv.messages.filter(function(m){return!m.hidden&&!m.autoHidden&&!m.isSummary&&m.role!=='tool_status'&&m.role!=='tool'&&!(m.role==='assistant'&&m.toolCalls&&m.toolCalls.length>0)&&!m.pending});return msgs.map(function(m,i){return{id:m.id,role:m.role,preview:m.content.slice(0,100).replace(/\n/g,' '),chars:m.content.length,isProtected:i>=msgs.length-prot}})}
+
+function buildEP(baseUrl){var c=(baseUrl||'').trim().replace(/\/+$/,'');if(!c)return'';if(/\/chat\/completions$/i.test(c))return c;if(/\/v1$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions'}
+
+async function evaluateContext(conv){
+  var payload=buildEvalPayload(conv),rounds=S.s.protectRecentRounds||3,model=S.s.evalModel||S.s.model,baseUrl=S.s.evalBaseUrl||S.s.baseUrl,key=S.s.evalApiKey||S.s.apiKey;
+  if(!baseUrl||!key||!model)return null;
+  var url=buildEP(baseUrl);if(!url)return null;
+  var sums=conv.messages.filter(function(m){return m.isSummary&&!m.hidden}).map(function(m){return m.content});
+  var ctx=sums.length?'\n已有摘要：\n'+sums.join('\n'):'';
+  var sys='你是对话上下文管理器。分析消息元数据，判断哪些可安全隐藏以节省token。\n规则：\n1.最近'+rounds+'轮（isProtected=true）必须保留\n2.信息已被后续覆盖/重复的优先隐藏\n3.已解决且无后续引用的优先隐藏\n4.用户强调的内容不可隐藏\n5.如果没什么可以隐藏的，canHide返回空数组\n只返回JSON：{"canHide":["id1","id2"],"summary":"被隐藏内容的摘要，20-80字，第三人称"}'+ctx;
+  try{var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:model,messages:[{role:'system',content:sys},{role:'user',content:JSON.stringify(payload)}],temperature:0.1,max_tokens:300,stream:false})});if(!r.ok)return null;var txt=(await r.json()).choices?.[0]?.message?.content?.trim();if(!txt)return null;var m=txt.match(/\{[\s\S]*\}/);return m?JSON.parse(m[0]):null}catch(e){console.error('eval:',e);return null}}
+
+function applyAutoHide(conv,result){
+  if(!result||!result.canHide||!result.canHide.length)return;
+  var ids=new Set(result.canHide),firstIdx=-1;
+  conv.messages.forEach(function(m,i){if(ids.has(m.id)){m.hidden=true;m.autoHidden=true;if(firstIdx<0)firstIdx=i}});
+  if(firstIdx>=0)conv.messages.splice(firstIdx,0,{id:'sum_'+uid(),role:'summary',content:result.summary||'已自动隐藏'+result.canHide.length+'条早期消息',time:new Date().toISOString(),pending:false,error:false,hidden:false,autoHidden:false,isSummary:true,toolCalls:null,toolCallId:null,toolName:null,toolUrl:null});
+  conv.updatedAt=new Date().toISOString();persistConv()}
+
+async function trimAfterReply(){
+  if(S.s.autoHideEnabled===false||_evaluating)return;var c=aConv();if(!c)return;var cid=c.id;
+  var threshold=S.s.contextThreshold||60000,total=estimateChars(c.messages);
+  if(total<=threshold)return;
+  _evaluating=true;status('正在评估上下文...');
+  try{var result=await evaluateContext(c);if(aConv()?.id!==cid)return;
+    if(result&&result.canHide&&result.canHide.length){applyAutoHide(c,result);renderConv();render();status('已自动隐藏 '+result.canHide.length+' 条消息')}else status('评估完成，无需裁剪')}catch(e){console.error('auto trim:',e)}
+  finally{_evaluating=false}}
 
 async function submit(e){
   e.preventDefault();if(S.ctl){S.ctl.abort();return}
@@ -376,6 +427,7 @@ async function submit(e){
   try{await reply(ai.id);if(!c.titleGenerated&&c.messages.filter(function(x){return!x.pending&&x.role==='user'}).length>=1)await genTitle(c)}
   catch(err){var t=c.messages.find(function(x){return x.id===ai.id});if(t){t.pending=false;t.error=err?.name!=='AbortError';t.content=err?.name==='AbortError'?(t.content||'已停止'):'请求失败：'+(err?.message||'未知')}status(err?.name==='AbortError'?'已停止':'请求失败')}
   finally{S.ctl=null;persistConv();renderConv();refreshUI();render();U.prompt.focus()}
+  try{await trimAfterReply()}catch(e){console.error('auto trim:',e)}
 }
 
 async function reply(mid){
@@ -428,12 +480,8 @@ async function execTC(tc,c,ai,step,max){
 
 function extractDomain(u){try{var p=new URL(u);return p.hostname+p.pathname.replace(/\/$/,'').slice(0,40)}catch(e){return u}}
 function extractTC(json){var c=json?.choices?.[0];return c?.message?.tool_calls?.map(function(t){return{id:t.id,type:t.type||'function',function:{name:t.function.name,arguments:t.function.arguments}}})||[]}
-function buildMsgs(c,pi){var out=[];if(S.s.systemPrompt)out.push({role:'system',content:S.s.systemPrompt});
-  c.messages.forEach(function(m){if(m.id===pi.id||m.pending||m.role==='tool_status'||m.hidden)return;
-    if(m.role==='assistant'&&m.toolCalls?.length)out.push({role:'assistant',content:m.content||null,tool_calls:m.toolCalls});
-    else if(m.role==='tool')out.push({role:'tool',tool_call_id:m.toolCallId,content:m.content});
-    else out.push({role:m.role,content:m.content})});return out}
-function ep(){var c=(S.s?.baseUrl||'').trim().replace(/\/+$/,'');if(!c)return'';if(/\/chat\/completions$/i.test(c))return c;if(/\/v1$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions'}
+function buildMsgs(c,pi){var out=[];var baseSys=S.s.systemPrompt||'';var sums=c.messages.filter(function(m){return m.isSummary&&!m.hidden});if(sums.length)baseSys+=(baseSys?'\n\n':'')+'[早期对话摘要]\n'+sums.map(function(m){return m.content}).join('\n');if(baseSys)out.push({role:'system',content:baseSys});c.messages.forEach(function(m){if(m.id===pi.id||m.pending||m.role==='tool_status'||m.hidden||m.isSummary)return;if(m.role==='assistant'&&m.toolCalls?.length)out.push({role:'assistant',content:m.content||null,tool_calls:m.toolCalls});else if(m.role==='tool')out.push({role:'tool',tool_call_id:m.toolCallId,content:m.content});else out.push({role:m.role,content:m.content})});return out}
+function ep(){return buildEP(S.s?.baseUrl)}
 
 async function rSSE(res,tCb,tcCb){var rd=res.body.getReader(),dec=new TextDecoder(),buf='';
   while(true){var r=await rd.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true}).replace(/\r\n/g,'\n');var i;while((i=buf.indexOf('\n\n'))!==-1){procSSE(buf.slice(0,i),tCb,tcCb);buf=buf.slice(i+2)}}
@@ -449,7 +497,9 @@ async function genTitle(c){if(!S.s?.baseUrl||!S.s?.apiKey)return;try{
 function render(opts){
   opts=opts||{};var c=aConv(),msgs=c?c.messages:[],el=U.msgs,prevH=el.scrollHeight,parts=[],i=0;
   while(i<msgs.length){var m=msgs[i];
-    if(m.hidden){var cnt=0,from=m.id,j=i;while(j<msgs.length&&msgs[j].hidden){if(msgs[j].role==='user')cnt++;j++}i=j;
+    if(m.isSummary){parts.push(vMsg(m));i++;continue}
+    if(m.hidden&&m.autoHidden){i++;continue}
+    if(m.hidden){var cnt=0,from=m.id,j=i;while(j<msgs.length&&msgs[j].hidden&&!msgs[j].autoHidden){if(msgs[j].role==='user')cnt++;j++}i=j;
       parts.push('<div class="hi"><span>⋯ '+cnt+' 对问答已隐藏</span><button class="sh-btn" data-from="'+from+'">显示</button><button class="sa-btn">全部显示</button></div>');continue}
     if(m.role==='tool'||(m.role==='assistant'&&m.toolCalls?.length&&!m.content?.trim())){i++;continue}
     parts.push(vMsg(m));i++}
@@ -461,6 +511,7 @@ function emptyH(){return'<div class="stack"><div class="empty"><h2>AI Chat Lite<
 
 function vMsg(m){
   if(m.role==='tool_status')return'<div class="msg"><div class="msg-bd tbd">'+esc(m.content)+'</div></div>';
+  if(m.isSummary||m.role==='summary')return'<div class="sum"><span class="sum-icon">📋</span><span class="sum-txt">'+esc(m.content)+'</span><button class="sum-expand">展开查看</button></div>';
   var u=m.role==='user',cls='msg '+(u?'u':'a')+(m.error?' err':'')+(m.pending?' pending':'');
   var pf=!u&&!m.pending&&!m.error&&m.latency!=null?'<span class="msg-pf">'+m.latency+'ms · '+(m.speed||0)+' 字/s</span>':'';
   var hbtn=m.pending?'':u?'<button class="msg-hide" data-hide="'+m.id+'">隐藏</button>':(m.role==='assistant'&&!m.error&&m.content?.trim()?'<button class="msg-hide" data-ha="'+m.id+'">隐藏</button>':'');
@@ -473,13 +524,12 @@ function fmtT(v){try{return new Date(v).toLocaleTimeString('zh-CN',{hour:'2-digi
 function applyCollapse(){var ch=240;
   U.msgs.querySelectorAll('.msg.u:not(.pending)').forEach(function(el,i,arr){var bd=el.querySelector('.msg-bd');if(!bd)return;var id=el.dataset.mid;if(!id)return;
     if(bd.scrollHeight<=ch+50)return;var isExp=exp.has(id)||i===arr.length-1;
-    if(!isExp)bd.classList.add('collapsed');var btn=document.createElement('button');btn.className='clp';btn.textContent=isExp?'收起':'展开全文';bd.parentNode.insertBefore(btn,bd.nextSibling)})
-}
+    if(!isExp)bd.classList.add('collapsed');var btn=document.createElement('button');btn.className='clp';btn.textContent=isExp?'收起':'展开全文';bd.parentNode.insertBefore(btn,bd.nextSibling)})}
 
 function updStream(ai){var el=$('[data-mid="'+ai.id+'"]');if(!el){render();return}var bd=el.querySelector('.msg-bd');if(!bd)return;bd.innerHTML=renderMd(ai.content)}
 
 /* ── Cloud Sync: 单 Gist 单文件 ── */
-var _syncing=false,_syncAgain=false,_syncTimer=0,_applyingRemote=false;
+var _syncing=false,_syncAgain=false,_syncTimer=0,_applyingRemote=false,_evaluating=false;
 function persistSy(){write(K.y,{t:S.sy.t,g:S.sy.g,sa:S.sy.sa,ta:S.sy.ta,d:S.sy.d||{}})}
 function stamp(v){var n=new Date(v||0).getTime();return isFinite(n)?n:0}
 function scheduleSync(d){d=d==null?1200:d;if(initing||_applyingRemote)return;clearTimeout(_syncTimer);if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}if(!S.sy.t){updateSyncUI();return}_syncTimer=setTimeout(function(){doSync()},d)}
