@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AI Chat Lite</title>
-<link rel="icon" href="image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/editor/editor.main.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -201,16 +201,12 @@ var MOPTS={readOnly:true,domReadOnly:true,minimap:{enabled:false},scrollBeyondLa
 function curTheme(){return theme==='light'?'chat-light':'chat-dark'}
 function mapLang(l){var m={js:'javascript',ts:'typescript',py:'python',rb:'ruby',rs:'rust',sh:'shell',bash:'shell',zsh:'shell',yml:'yaml',md:'markdown',cs:'csharp',kt:'kotlin',vue:'html',dockerfile:'dockerfile'};return m[(l||'').toLowerCase()]||l||'plaintext'}
 
-var _mcbHashes={};
 function safeInitMonaco(){
   if(!monacoReady)return;
   document.querySelectorAll('.msg:not(.pending) .cb:not([data-monaco])').forEach(function(el){
     if(el.dataset.monaco)return;
     var pre=el.querySelector('pre');if(!pre)return;
     var text=pre.textContent.replace(/\n$/,''),lang=el.dataset.lang||'';
-    var hash=lang+'|'+text.length+'|'+text.slice(0,80);
-    if(_mcbHashes[hash]){el.dataset.monaco='done';pre.style.display='none';return}
-    _mcbHashes[hash]=true;
     el.dataset.monaco='done';pre.style.display='none';
     var ediv=document.createElement('div');
     ediv.style.height=Math.min(text.split('\n').length*18+16,400)+'px';
@@ -267,14 +263,13 @@ function mdBlock(t){
   fl();fq();return out.join('')||'<p></p>';
 }
 function inline(t){
-  return esc(t).replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>')
+  return esc(t).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>')
     .replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
     .replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>');
 }
 
 var K={s:'ai-chat-lite:settings',c:'ai-chat-lite:conversations',y:'ai-chat-lite:sync',t:'ai-chat-lite:theme'};
 var DF={baseUrl:'https://api.openai.com/v1',apiKey:'',model:'gpt-4.1-mini',systemPrompt:'你是一个专业、准确、简洁的 AI 助手。',temperature:.7};
-var TOOLS=[{type:'function',function:{name:'fetch_url',description:'获取网页内容',parameters:{type:'object',properties:{url:{type:'string'}},required:['url']}}}];
 var $=function(s){return document.querySelector(s)};
 var esc=function(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')};
 var read=function(k,f){try{return JSON.parse(localStorage.getItem(k))??f}catch(e){return f}};
@@ -341,14 +336,14 @@ function bind(){
   U.themeBtn.onclick=function(){theme=theme==='dark'?'light':'dark';document.documentElement.dataset.theme=theme;localStorage.setItem(K.t,theme);S.sy.ta=new Date().toISOString();persistSy();scheduleSync(800);U.themeBtn.textContent=theme==='dark'?'☀':'☾';if(monacoReady)monaco.editor.setTheme(curTheme())};
   U.setBtn.onclick=function(){show('mask')};U.maskX.onclick=U.maskC.onclick=function(){hide('mask')};
   U.maskS.onclick=function(){Object.assign(S.s,formVal());saveProf();fillForm();refreshUI();hide('mask');status('已保存「'+S.s.name+'」');U.prompt.focus()};
-  U.newBtn.onclick=function(){if(S.ctl)S.ctl.abort();S.ctl=null;mkConv();exp.clear();ascroll=true;sst=0;_mcbHashes={};renderConv();render();refreshUI();safeInitMonaco();status('新对话');U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus()};
+  U.newBtn.onclick=function(){if(S.ctl)S.ctl.abort();S.ctl=null;mkConv();exp.clear();ascroll=true;sst=0;renderConv();render();refreshUI();safeInitMonaco();status('新对话');U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus()};
   U.pSel.onchange=function(){var v=U.pSel.value;if(!v||v===S.ap)return;applyProf(S.p.find(function(x){return x.id===v}));status('已切换到「'+S.s.name+'」')};
   U.pNew.onclick=function(){var n=(U.pName.value.trim()||S.s.name)+' 副本';var names=new Set(S.p.map(function(x){return x.name}));var nm=n,i=2;while(names.has(nm))nm=n+' '+(i++);var p=normP(Object.assign({},formVal(),{name:nm}));S.p.push(p);applyProf(p)};
   U.pDel.onclick=function(){if(S.p.length<=1)return status('至少保留一个方案');if(!confirm('删除「'+S.s.name+'」？'))return;var i=S.p.findIndex(function(x){return x.id===S.s.id});S.p.splice(i,1);applyProf(S.p[i]||S.p[i-1]||S.p[0])};
   U.mask.onmousedown=function(e){if(e.target===U.mask)hide('mask')};
   U.msgs.onclick=function(e){
     var rb=e.target.closest('.restore-all');
-    if(rb){var c=aConv();if(!c)return;c.messages.forEach(function(m){if(m.autoHidden){m.hidden=false;m.autoHidden=false}});c.updatedAt=new Date().toISOString();persistConv();_mcbHashes={};renderConv();render();safeInitMonaco();return}
+    if(rb){var c=aConv();if(!c)return;c.messages.forEach(function(m){if(m.autoHidden){m.hidden=false;m.autoHidden=false}});c.updatedAt=new Date().toISOString();persistConv();renderConv();render();safeInitMonaco();return}
     var inc=e.target.closest('[data-include]');if(inc){toggleHide(inc.dataset.include);return}
     var t=e.target.closest('[data-sug]');if(t){U.prompt.value=t.dataset.sug;resize();U.prompt.focus();return}
     var cl=e.target.closest('.clp');if(cl){var bd=cl.previousElementSibling;if(!bd)return;var id=bd.closest('.msg')?.dataset.mid;var on=bd.classList.toggle('collapsed');if(id){if(on)exp.delete(id);else exp.add(id)}cl.textContent=on?'展开全文':'收起';return}
@@ -364,10 +359,10 @@ function bind(){
   U.newConvBtn.onclick=function(){U.newBtn.click();U.sb.classList.remove('open')};
   U.convList.onclick=function(e){
     var item=e.target.closest('.cnv');if(!item)return;
-    if(e.target.closest('.x')){var id=item.dataset.id;if(S.c.length<=1)return status('至少保留一个对话');var c=S.c.find(function(x){return x.id===id});if(!confirm('删除「'+(c?c.title:'')+'」？'))return;var i=S.c.findIndex(function(x){return x.id===id});S.sy.d[id]=new Date().toISOString();persistSy();S.c.splice(i,1);if(id===S.ac)S.ac=(S.c[i]||S.c[i-1]||S.c[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistConv();_mcbHashes={};renderConv();render();refreshUI();safeInitMonaco();return}
+    if(e.target.closest('.x')){var id=item.dataset.id;if(S.c.length<=1)return status('至少保留一个对话');var c=S.c.find(function(x){return x.id===id});if(!confirm('删除「'+(c?c.title:'')+'」？'))return;var i=S.c.findIndex(function(x){return x.id===id});S.sy.d[id]=new Date().toISOString();persistSy();S.c.splice(i,1);if(id===S.ac)S.ac=(S.c[i]||S.c[i-1]||S.c[0])?.id;if(S.ctl)S.ctl.abort();S.ctl=null;persistConv();renderConv();render();refreshUI();safeInitMonaco();return}
     if(e.target.closest('.rn')){var c=S.c.find(function(x){return x.id===item.dataset.id});if(!c)return;var t=prompt('新标题：',c.title);if(t===null||!t.trim())return;c.title=t.trim();c.updatedAt=new Date().toISOString();persistConv();renderConv();return}
     if(e.target.closest('.cp')){var c=S.c.find(function(x){return x.id===item.dataset.id});if(!c)return;var lines=['# '+c.title,''];c.messages.forEach(function(m){if(m.pending||m.role==='tool'||m.role==='tool_status')return;lines.push('**'+(m.role==='user'?'你':'AI')+'：**',m.content||'','')});var text=lines.join('\n').trim();if(!text)return status('无可复制内容');clipCopy(text).then(function(){status('已复制「'+c.title+'」')});return}
-    if(item.dataset.id===S.ac)return;if(S.ctl)S.ctl.abort();S.ctl=null;S.ac=item.dataset.id;exp.clear();ascroll=true;sst=0;_mcbHashes={};renderConv();render();refreshUI();safeInitMonaco();U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus();U.sb.classList.remove('open')
+    if(item.dataset.id===S.ac)return;if(S.ctl)S.ctl.abort();S.ctl=null;S.ac=item.dataset.id;exp.clear();ascroll=true;sst=0;renderConv();render();refreshUI();safeInitMonaco();U.msgs.scrollTop=U.msgs.scrollHeight;U.form.classList.remove('off');U.prompt.focus();U.sb.classList.remove('open')
   };
   document.onclick=function(e){if(U.sb.classList.contains('open')&&!U.sb.contains(e.target)&&!U.menuBtn.contains(e.target))U.sb.classList.remove('open')};
   U.syncBtn.onclick=function(){show('syncMask');if(S.sy.t)scheduleSync(0)};U.syncX.onclick=U.syncC.onclick=function(){hide('syncMask')};
@@ -422,61 +417,34 @@ async function submit(e){
 async function reply(mid){
   var c=aConv();if(!c)return;var ai=c.messages.find(function(x){return x.id===mid});if(!ai)return;
   S.ctl=new AbortController();refreshUI();status('正在生成...');
-  var t0=Date.now(),maxSteps=16,done=false;
-  for(var step=0;step<maxSteps;step++){
-    var url=ep(),msgs=buildMsgs(c,ai),last=step===maxSteps-1;
-    var body={model:S.s.model,messages:msgs,temperature:S.s.temperature,stream:true};
-    if(!last)body.tools=TOOLS;
-    var res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});
-    if(!res.ok)throw new Error(await res.text()||'HTTP '+res.status);
-    var ct=res.headers.get('content-type')||'';
-    if(/event-stream/i.test(ct)&&res.body){
-      var tcMap={},hasTC=false,fc=null;
-      await rSSE(res,function(chunk){if(!fc){fc=Date.now();ai.latency=fc-t0}ai.content+=chunk;updStream(ai)},function(delta){
-        hasTC=true;var i=delta.index??0;if(!tcMap[i])tcMap[i]={id:'',type:'function',function:{name:'',arguments:''}};
-        if(delta.id)tcMap[i].id=delta.id;if(delta.type)tcMap[i].type=delta.type;
-        if(delta.function?.name)tcMap[i].function.name+=delta.function.name;if(delta.function?.arguments)tcMap[i].function.arguments+=delta.function.arguments});
-      if(hasTC){await execTC(Object.values(tcMap),c,ai,step,maxSteps);continue}
-      if(!ai.content.trim())ai.content='接口返回为空';done=true;break;
-    }
-    var raw=await res.text(),json;try{json=JSON.parse(raw)}catch(e){ai.content=raw||'接口返回为空';ai.latency=Date.now()-t0;done=true;break}
-    var tc=extractTC(json),txt=json.choices?.[0]?.message?.content??'';
-    if(tc.length){await execTC(tc,c,ai,step,maxSteps);continue}
-    ai.content=txt||'接口返回为空';if(!ai.latency)ai.latency=Date.now()-t0;done=true;break;
+  var t0=Date.now(),done=false;
+  var url=ep(),msgs=buildMsgs(c,ai);
+  var body={model:S.s.model,messages:msgs,temperature:S.s.temperature,stream:true};
+  var res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});
+  if(!res.ok)throw new Error(await res.text()||'HTTP '+res.status);
+  var ct=res.headers.get('content-type')||'';
+  if(/event-stream/i.test(ct)&&res.body){
+    var fc=null;
+    await rSSE(res,function(chunk){if(!fc){fc=Date.now();ai.latency=fc-t0}ai.content+=chunk;updStream(ai)});
+    if(!ai.content.trim())ai.content='接口返回为空';
+  }else{
+    var raw=await res.text(),json;try{json=JSON.parse(raw)}catch(e){ai.content=raw||'接口返回为空';ai.latency=Date.now()-t0;throw new Error(ai.content)}
+    var txt=json.choices?.[0]?.message?.content??'';
+    ai.content=txt||'接口返回为空';if(!ai.latency)ai.latency=Date.now()-t0;
   }
-  if(!done&&!ai.content.trim())ai.content='已达到最大步骤限制';
   var dur=(Date.now()-t0)/1000;
   if(dur>0&&ai.content.length>10)ai.speed=(ai.content.length/dur).toFixed(1);
   ai.pending=false;ai.error=false;if(!ai.content.trim())ai.content='接口返回为空';status('完成');
 }
 
-async function execTC(tc,c,ai,step,max){
-  var asst=Object.assign(mkMsg('assistant'),{toolCalls:tc});
-  var idx=c.messages.indexOf(ai);c.messages.splice(idx,0,asst);
-  var sms=[];
-  for(var ti=0;ti<tc.length;ti++){var turl='';try{turl=JSON.parse(tc[ti].function.arguments).url||''}catch(e){}
-    var dm=extractDomain(turl);sms.push(Object.assign(mkMsg('tool_status','🔍 正在读取 '+(dm||turl)+'...'),{pending:true,toolCallId:tc[ti].id,toolName:tc[ti].function.name,toolUrl:turl}))}
-  idx=c.messages.indexOf(ai);c.messages.splice(idx,0,...sms);render({scroll:true});status('工具调用 ('+(step+1)+'/'+max+')...');
-  var results=await Promise.all(tc.map(async function(t){var turl='';try{turl=JSON.parse(t.function.arguments).url||''}catch(e){}
-    try{var r=await fetch('/api/fetch?url='+encodeURIComponent(turl),{signal:S.ctl.signal});var j=await r.json();return{id:t.id,name:t.function.name,content:j.error?'获取失败: '+j.error:j.content||'',error:!!j.error,url:turl}}
-    catch(e){if(e.name==='AbortError')throw e;return{id:t.id,name:t.function.name,content:'获取失败: '+e.message,error:true,url:turl}}}));
-  var tms=[];
-  for(var ri=0;ri<results.length;ri++){var r=results[ri];var sm=sms.find(function(m){return m.toolCallId===r.id});
-    if(sm){sm.pending=false;sm.error=r.error;var d=extractDomain(r.url);sm.content=r.error?'❌ '+d+' 失败':'✅ 已读取 '+d}
-    tms.push(Object.assign(mkMsg('tool',r.content.slice(0,8000)),{toolCallId:r.id,toolName:r.name}))}
-  idx=c.messages.indexOf(ai);c.messages.splice(idx,0,...tms);render({scroll:true});
-}
-
-function extractDomain(u){try{var p=new URL(u);return p.hostname+p.pathname.replace(/\/$/,'').slice(0,40)}catch(e){return u}}
-function extractTC(json){var c=json?.choices?.[0];return c?.message?.tool_calls?.map(function(t){return{id:t.id,type:t.type||'function',function:{name:t.function.name,arguments:t.function.arguments}}})||[]}
 function buildMsgs(c,pi){var out=[];if(S.s.systemPrompt)out.push({role:'system',content:S.s.systemPrompt});c.messages.forEach(function(m){if(m.id===pi.id||m.pending||m.role==='tool_status'||m.hidden)return;if(m.role==='assistant'&&m.toolCalls?.length)out.push({role:'assistant',content:m.content||null,tool_calls:m.toolCalls});else if(m.role==='tool')out.push({role:'tool',tool_call_id:m.toolCallId,content:m.content});else out.push({role:m.role,content:m.content})});return out}
 function ep(){return buildEP(S.s?.baseUrl)}
 
-async function rSSE(res,tCb,tcCb){var rd=res.body.getReader(),dec=new TextDecoder(),buf='';
-  while(true){var r=await rd.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true}).replace(/\r\n/g,'\n');var i;while((i=buf.indexOf('\n\n'))!==-1){procSSE(buf.slice(0,i),tCb,tcCb);buf=buf.slice(i+2)}}
-  if(buf.trim())procSSE(buf,tCb,tcCb)}
-function procSSE(ev,tCb,tcCb){ev.split('\n').forEach(function(ln){if(!ln.startsWith('data:'))return;var t=ln.slice(5).trim();if(!t||t==='[DONE]')return;
-  try{var j=JSON.parse(t),c=j.choices?.[0];if(c?.delta?.content)tCb(c.delta.content);if(c?.delta?.tool_calls)c.delta.tool_calls.forEach(function(tc){tcCb(tc)})}catch(e){}})}
+async function rSSE(res,tCb){var rd=res.body.getReader(),dec=new TextDecoder(),buf='';
+  while(true){var r=await rd.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true}).replace(/\r\n/g,'\n');var i;while((i=buf.indexOf('\n\n'))!==-1){procSSE(buf.slice(0,i),tCb);buf=buf.slice(i+2)}}
+  if(buf.trim())procSSE(buf,tCb)}
+function procSSE(ev,tCb){ev.split('\n').forEach(function(ln){if(!ln.startsWith('data:'))return;var t=ln.slice(5).trim();if(!t||t==='[DONE]')return;
+  try{var j=JSON.parse(t),c=j.choices?.[0];if(c?.delta?.content)tCb(c.delta.content)}catch(e){}})}
 
 async function genTitle(c){if(!S.s?.baseUrl||!S.s?.apiKey)return;try{
   var r=await fetch(ep(),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify({model:S.s.model,messages:[{role:'system',content:'用不超过15个字概括对话主题，只输出标题'},{role:'user',content:c.messages.filter(function(m){return m.role==='user'&&!m.hidden}).slice(0,2).map(function(m){return m.content}).join('\n')}],temperature:.7,max_tokens:30,stream:false})});
@@ -531,6 +499,7 @@ function updStream(ai){
     if(!_streamEl)return;
     var bd=_streamEl.querySelector('.msg-bd');
     if(bd)bd.innerHTML=renderMd(_streamContent);
+    if(ascroll)U.msgs.scrollTop=U.msgs.scrollHeight;
   })
 }
 
@@ -553,8 +522,7 @@ async function readRemote(gid){
   if(!f)return null;
   var raw=f.content||'{}';
   if(f.truncated&&f.raw_url){
-    try{var rr=await fetch(f.raw_url);if(rr.ok)raw=await rr.text();else throw 0}catch(e){
-    try{var gg=await ghAPI('gists/'+gid+'/files/sync.json');if(typeof gg==='string')raw=gg}catch(e2){throw new Error('无法读取截断的 sync.json：'+e2.message)}}
+    try{var rr=await fetch(f.raw_url,{headers:{Authorization:'Bearer '+S.sy.t,Accept:'application/vnd.github+json'}});if(rr.ok)raw=await rr.text();else throw 0}catch(e){throw new Error('无法读取截断的 sync.json：'+e.message)}
   }
   try{return JSON.parse(raw||'{}')}catch(e){throw new Error('云端 sync.json 不是合法 JSON')}
 }
