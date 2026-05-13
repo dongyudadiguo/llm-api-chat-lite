@@ -263,7 +263,7 @@ function mdBlock(t){
   fl();fq();return out.join('')||'<p></p>';
 }
 function inline(t){
-  return esc(t).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>')
+  return esc(t).replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>')
     .replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
     .replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>');
 }
@@ -517,15 +517,33 @@ function mergeMsgs(a,b,pb){var map={},ids=[],base=pb?(b||[]):(a||[]),extra=pb?(a
 function mergeConv(l,r){if(!l)return r;if(!r)return l;var lu=stamp(l.updatedAt),ru=stamp(r.updatedAt),base=ru>=lu?r:l,ct=stamp(l.createdAt)&&stamp(r.createdAt)?(stamp(l.createdAt)<stamp(r.createdAt)?l.createdAt:r.createdAt):(l.createdAt||r.createdAt||new Date().toISOString());return{id:base.id,title:base.title||'新对话',messages:mergeMsgs(l.messages,r.messages,ru>=lu),createdAt:ct,updatedAt:base.updatedAt||new Date().toISOString(),titleGenerated:!!base.titleGenerated}}
 function normConvs(arr){return(arr||[]).filter(function(x){return x&&x.id&&Array.isArray(x.messages)}).map(function(x){return{id:x.id,title:x.title||'新对话',messages:(x.messages||[]).filter(validMsg).map(msgObj),createdAt:x.createdAt||new Date().toISOString(),updatedAt:x.updatedAt||new Date().toISOString(),titleGenerated:!!x.titleGenerated}})}
 function applyRemote(remote){if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}_applyingRemote=true;try{var rd=remote.deletedConversations&&typeof remote.deletedConversations==='object'?remote.deletedConversations:{};Object.keys(rd).forEach(function(id){if(stamp(rd[id])>stamp(S.sy.d[id]))S.sy.d[id]=rd[id]});persistSy();if(remote.settings&&stamp(remote.settingsUpdatedAt||remote.ts)>stamp(S.sy.sa)){write(K.s,clone(remote.settings));S.sy.sa=remote.settingsUpdatedAt||remote.ts||new Date().toISOString();persistSy()}if(Array.isArray(remote.conversations)){var map={};S.c.forEach(function(c){if(stamp(S.sy.d[c.id])<stamp(c.updatedAt))map[c.id]=c});remote.conversations.forEach(function(rc){if(!rc||!rc.id||!Array.isArray(rc.messages))return;var rt=stamp(rc.updatedAt);if(stamp(S.sy.d[rc.id])>=rt)return;map[rc.id]=mergeConv(map[rc.id],rc)});S.c=normConvs(Object.values(map)).sort(function(a,b){return stamp(b.updatedAt)-stamp(a.updatedAt)})}var raw2=read(K.s,null);if(raw2&&Array.isArray(raw2.profiles)){S.p=raw2.profiles.map(normP);S.ap=S.p.find(function(x){return x.id===raw2.activeProfileId})?raw2.activeProfileId:S.p[0]?.id}else{S.p=[normP(raw2||{})];S.ap=S.p[0].id}S.s=S.p.find(function(x){return x.id===S.ap})||S.p[0];S.ap=S.s.id;if(!S.c.length)mkConv();S.ac=S.c.find(function(x){return x.id===S.ac})?S.ac:S.c[0]?.id;persistConv();fillForm();renderConv();render();safeInitMonaco();refreshUI()}finally{_applyingRemote=false}}
+
 async function readRemote(gid){
-  var g=await ghAPI('gists/'+gid),f=g.files&&g.files['sync.json'];
+  var g=await ghAPI('gists/'+gid);
+  var f=g.files&&g.files['sync.json'];
   if(!f)return null;
+
   var raw=f.content||'{}';
+
   if(f.truncated&&f.raw_url){
-    try{var rr=await fetch(f.raw_url,{headers:{Authorization:'Bearer '+S.sy.t,Accept:'application/vnd.github+json'}});if(rr.ok)raw=await rr.text();else throw 0}catch(e){throw new Error('无法读取截断的 sync.json：'+e.message)}
+    try{
+      var rr=await fetch(f.raw_url+'?t='+Date.now(),{
+        cache:'no-store'
+      });
+      if(!rr.ok)throw new Error('HTTP '+rr.status);
+      raw=await rr.text();
+    }catch(e){
+      throw new Error('无法读取截断的 sync.json：'+e.message);
+    }
   }
-  try{return JSON.parse(raw||'{}')}catch(e){throw new Error('云端 sync.json 不是合法 JSON')}
+
+  try{
+    return JSON.parse(raw||'{}');
+  }catch(e){
+    throw new Error('云端 sync.json 不是合法 JSON');
+  }
 }
+
 async function doSync(){clearTimeout(_syncTimer);if(!S.sy.t){updateSyncUI();return}if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}if(_syncing){_syncAgain=true;return}_syncing=true;_syncAgain=false;updateSyncUI('syncing');try{var gid=S.sy.g||null;if(!gid){var found=await findSyncGist();if(found)gid=found.id}if(!gid){var created=await createSyncGist();gid=created.id}S.sy.g=gid;persistSy();var remote=null;try{remote=await readRemote(gid)}catch(e){if(e.status===404){S.sy.g='';persistSy();gid=null;var f2=await findSyncGist();if(f2)gid=f2.id;if(!gid){var c2=await createSyncGist();gid=c2.id}S.sy.g=gid;persistSy();remote=await readRemote(gid)}else throw e}var hasRemote=!!(remote&&(remote.settings||remote.theme||Array.isArray(remote.conversations)||remote.deletedConversations));if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}if(hasRemote){applyRemote(remote);applyRemoteTheme(remote)}if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}if(!S.sy.ta){S.sy.ta='1970-01-01T00:00:00.000Z';persistSy()}await ghAPI('gists/'+gid,'PATCH',{files:{'sync.json':{content:JSON.stringify({app:'ai-chat-lite',settings:clone(read(K.s,null)),settingsUpdatedAt:S.sy.sa||new Date().toISOString(),theme:localStorage.getItem(K.t)||theme,themeUpdatedAt:S.sy.ta,conversations:read(K.c,[]),deletedConversations:S.sy.d||{},ts:new Date().toISOString()})}}});updateSyncUI('ok');status(hasRemote?'已同步':'已创建云端同步并上传本地数据')}catch(e){updateSyncUI('error');var msg=e.message||String(e);if(e.status===401)msg='Token 无效或已过期';else if(e.status===403)msg='Token 没有 gist 权限，或 GitHub API 限流';status('同步失败：'+msg);console.error('sync:',e)}finally{_syncing=false;if(_syncAgain)scheduleSync(500)}}
 async function ghAPI(path,method,body){var headers={Authorization:'Bearer '+S.sy.t,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};if(body)headers['Content-Type']='application/json';var opts={method:method||'GET',headers:headers};if(body)opts.body=JSON.stringify(body);var r=await fetch('https://api.github.com/'+path,opts),txt=await r.text(),data=null;if(txt){try{data=JSON.parse(txt)}catch(e){data=txt}}if(!r.ok){var err=new Error(data&&data.message?data.message:txt||('HTTP '+r.status));err.status=r.status;err.data=data;throw err}return data}
 </script>
