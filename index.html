@@ -209,6 +209,9 @@ require(['vs/editor/editor.main'],function(){
 var MOPTS={readOnly:true,domReadOnly:true,minimap:{enabled:false},scrollBeyondLastLine:false,lineNumbers:'off',folding:false,wordWrap:'on',fontSize:13,fontFamily:"'Fira Code',Menlo,Consolas,'Courier New',monospace",fontLigatures:true,scrollbar:{vertical:'auto',horizontal:'auto',verticalScrollbarSize:6,horizontalScrollbarSize:6},overviewRulerLanes:0,hideCursorInOverviewRuler:true,overviewRulerBorder:false,renderLineHighlight:'none',contextmenu:false,padding:{top:8,bottom:8},lineDecorationsWidth:0,lineNumbersMinChars:0,automaticLayout:true,renderIndentGuides:true,guides:{indentation:true,bracketPairs:false}};
 function curTheme(){return theme==='light'?'chat-light':'chat-dark'}
 function mapLang(l){var m={js:'javascript',ts:'typescript',py:'python',rb:'ruby',rs:'rust',sh:'shell',bash:'shell',zsh:'shell',yml:'yaml',md:'markdown',cs:'csharp',kt:'kotlin',vue:'html',dockerfile:'dockerfile'};return m[(l||'').toLowerCase()]||l||'plaintext'}
+
+/* ── Monaco 实例管理 ── */
+var _monacoInstances=[];
 function initCB(el){
   if(el.dataset.monaco)return;
   var pre=el.querySelector('pre');if(!pre)return;
@@ -218,10 +221,10 @@ function initCB(el){
   ediv.style.height=Math.min(text.split('\n').length*18+16,400)+'px';
   el.appendChild(ediv);
   if(text.split('\n').length*18+16>400){var f=document.createElement('div');f.className='monaco-fade';el.appendChild(f)}
-  try{monaco.editor.create(ediv,Object.assign({value:text,language:mapLang(lang),theme:curTheme()},MOPTS))}
-  catch(e){pre.style.display='';ediv.remove();el.dataset.monaco=''}
+  try{var ed=monaco.editor.create(ediv,Object.assign({value:text,language:mapLang(lang),theme:curTheme()},MOPTS));_monacoInstances.push(ed)}catch(e){pre.style.display='';ediv.remove();el.dataset.monaco=''}
 }
 function initAllCB(){if(!monacoReady)return;document.querySelectorAll('.msg:not(.pending) .cb:not([data-monaco])').forEach(initCB)}
+function disposeAllMonaco(){for(var i=0;i<_monacoInstances.length;i++){try{_monacoInstances[i].dispose()}catch(e){}}_monacoInstances=[]}
 
 function renderMd(src){
   var raw=String(src||'').replace(/\r/g,'').split('\n'),out=[],i=0;
@@ -289,6 +292,7 @@ var S={p:[],ap:null,s:null,c:[],ac:null,ctl:null,sy:Object.assign({t:'',g:'',sa:
 if(!S.sy.d||typeof S.sy.d!=='object')S.sy.d={};
 if(!S.sy.ta)S.sy.ta='1970-01-01T00:00:00.000Z';
 var ascroll=true,sst=0,initing=false,exp=new Set();
+var _streamEl=null,_streamTimer=0,_streamContent=null;
 
 var U={msgs:$('#messages'),form:$('#form'),prompt:$('#prompt'),send:$('#sendBtn'),st:$('#status'),
 pInfo:$('#pInfo'),mInfo:$('#mInfo'),mask:$('#mask'),setBtn:$('#setBtn'),maskX:$('#maskX'),maskC:$('#maskC'),maskS:$('#maskS'),
@@ -492,7 +496,8 @@ async function genTitle(c){if(!S.s?.baseUrl||!S.s?.apiKey)return;try{
   if(t){c.title=t.slice(0,20);c.titleGenerated=true;c.updatedAt=new Date().toISOString();persistConv();renderConv()}}catch(e){}}
 
 function render(opts){
-  opts=opts||{};var c=aConv(),msgs=c?c.messages:[],el=U.msgs,prevH=el.scrollHeight,parts=[],i=0;
+  opts=opts||{};disposeAllMonaco();_streamEl=null;_streamTimer=0;
+  var c=aConv(),msgs=c?c.messages:[],el=U.msgs,prevH=el.scrollHeight,parts=[],i=0;
   while(i<msgs.length){var m=msgs[i];
     if(m.isSummary){parts.push(vMsg(m));i++;continue}
     if(m.role==='tool'||(m.role==='assistant'&&m.toolCalls?.length&&!m.content?.trim())){i++;continue}
@@ -522,12 +527,25 @@ function vMsg(m){
 
 function fmtT(v){try{return new Date(v).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}catch(e){return''}}
 
-function applyCollapse(){var ch=240;
+function applyCollapse(){if(S.ctl)return;var ch=240;
   U.msgs.querySelectorAll('.msg.u:not(.pending)').forEach(function(el,i,arr){var bd=el.querySelector('.msg-bd');if(!bd)return;var id=el.dataset.mid;if(!id)return;
     if(bd.scrollHeight<=ch+50)return;var isExp=exp.has(id)||i===arr.length-1;
     if(!isExp)bd.classList.add('collapsed');var btn=document.createElement('button');btn.className='clp';btn.textContent=isExp?'收起':'展开全文';bd.parentNode.insertBefore(btn,bd.nextSibling)})}
 
-function updStream(ai){var el=$('[data-mid="'+ai.id+'"]');if(!el){render();return}var bd=el.querySelector('.msg-bd');if(!bd)return;bd.innerHTML=renderMd(ai.content)}
+/* ── 流式更新节流 ── */
+function updStream(ai){
+  var el=_streamEl&&_streamEl.isConnected?_streamEl:$('[data-mid="'+ai.id+'"]');
+  _streamEl=el;
+  if(!el){render();return}
+  _streamContent=ai.content;
+  if(_streamTimer)return;
+  _streamTimer=requestAnimationFrame(function(){
+    _streamTimer=0;
+    if(!_streamEl)return;
+    var bd=_streamEl.querySelector('.msg-bd');
+    if(bd)bd.innerHTML=renderMd(_streamContent);
+  })
+}
 
 /* ── Cloud Sync: 单 Gist 单文件 ── */
 var _syncing=false,_syncAgain=false,_syncTimer=0,_applyingRemote=false,_evaluating=false;
