@@ -307,13 +307,21 @@ U.sToken.value=S.sy.t||'';updateSyncUI();
 U.themeBtn.textContent=theme==='dark'?'☀':'☾';
 bind();if(S.sy.t)doSync();
 
-function normP(v){var temp=Number(v.temperature);return{id:v.id||'p_'+uid(),name:(v.name||'默认方案').trim(),baseUrl:(v.baseUrl||DF.baseUrl).trim(),apiKey:(v.apiKey||'').trim(),model:(v.model||DF.model).trim(),systemPrompt:(v.systemPrompt||DF.systemPrompt).trim(),temperature:Math.max(0,Math.min(2,isFinite(temp)?temp:DF.temperature)),autoHideEnabled:v.autoHideEnabled!==false,contextThreshold:Number(v.contextThreshold)||60000}}
+function normP(v){var temp=Number(v.temperature);return{id:v.id||'p_'+uid(),name:(v.name||'默认方案').trim(),baseUrl:(v.baseUrl||DF.baseUrl).trim(),apiKey:(v.apiKey||'').trim(),model:(v.model||DF.model).trim(),systemPrompt:(v.systemPrompt||DF.systemPrompt).trim(),temperature:isFinite(temp)?temp:DF.temperature,autoHideEnabled:v.autoHideEnabled!==false,contextThreshold:Number(v.contextThreshold)||60000}}
 function msgObj(x){return{id:x.id||'m_'+uid(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null,hidden:!!x.hidden,autoHidden:!!x.autoHidden}}
 function mkMsg(role,content){return{id:'m_'+uid(),role:role,content:content||'',time:new Date().toISOString(),pending:false,error:false,toolCalls:null,toolCallId:null,toolName:null,toolUrl:null,hidden:false,autoHidden:false}}
 
+function buildReqBody(opts){
+  var body={model:S.s.model,messages:opts.messages};
+  if(S.s.temperature!=null&&!isNaN(S.s.temperature))body.temperature=S.s.temperature;
+  if(opts.stream)body.stream=true;
+  if(opts.max_tokens)body.max_tokens=opts.max_tokens;
+  return body;
+}
+
 function saveProf(){write(K.s,{activeProfileId:S.ap,profiles:S.p.map(function(x){return{id:x.id,name:x.name,baseUrl:x.baseUrl,apiKey:x.apiKey,model:x.model,systemPrompt:x.systemPrompt,temperature:x.temperature,autoHideEnabled:x.autoHideEnabled,contextThreshold:x.contextThreshold}})});if(!initing&&!_applyingRemote){S.sy.sa=new Date().toISOString();persistSy()}scheduleSync(1200)}
-function fillForm(){U.pSel.innerHTML=S.p.map(function(x){return'<option value="'+x.id+'">'+esc(x.name)+'</option>'}).join('');U.pSel.value=S.ap;U.pDel.disabled=S.p.length<=1;U.pName.value=S.s.name;U.pUrl.value=S.s.baseUrl;U.pKey.value=S.s.apiKey;U.pModel.value=S.s.model;U.pSys.value=S.s.systemPrompt;U.pTemp.value=Number(S.s.temperature).toFixed(1);var ah=$('#pAutoHide'),pt=$('#pThreshold');if(ah)ah.checked=S.s.autoHideEnabled!==false;if(pt)pt.value=S.s.contextThreshold||60000}
-function formVal(){var temp=Number(U.pTemp.value),ah=$('#pAutoHide'),pt=$('#pThreshold');return{name:(U.pName.value||'未命名').trim(),baseUrl:U.pUrl.value.trim(),apiKey:U.pKey.value.trim(),model:U.pModel.value.trim(),systemPrompt:U.pSys.value.trim(),temperature:Math.max(0,Math.min(2,isFinite(temp)?temp:.7)),autoHideEnabled:ah?ah.checked:true,contextThreshold:Number(pt?pt.value:60000)||60000}}
+function fillForm(){U.pSel.innerHTML=S.p.map(function(x){return'<option value="'+x.id+'">'+esc(x.name)+'</option>'}).join('');U.pSel.value=S.ap;U.pDel.disabled=S.p.length<=1;U.pName.value=S.s.name;U.pUrl.value=S.s.baseUrl;U.pKey.value=S.s.apiKey;U.pModel.value=S.s.model;U.pSys.value=S.s.systemPrompt;U.pTemp.value=S.s.temperature!=null?Number(S.s.temperature).toFixed(1):'';var ah=$('#pAutoHide'),pt=$('#pThreshold');if(ah)ah.checked=S.s.autoHideEnabled!==false;if(pt)pt.value=S.s.contextThreshold||60000}
+function formVal(){var temp=U.pTemp.value.trim()?Number(U.pTemp.value):null,ah=$('#pAutoHide'),pt=$('#pThreshold');return{name:(U.pName.value||'未命名').trim(),baseUrl:U.pUrl.value.trim(),apiKey:U.pKey.value.trim(),model:U.pModel.value.trim(),systemPrompt:U.pSys.value.trim(),temperature:temp!=null&&isFinite(temp)?Math.max(0,Math.min(2,temp)):null,autoHideEnabled:ah?ah.checked:true,contextThreshold:Number(pt?pt.value:60000)||60000}}
 function applyProf(p){S.ap=p.id;S.s=p;saveProf();fillForm();refreshUI()}
 
 function persistConv(){write(K.c,S.c.map(function(c){return{id:c.id,title:c.title,messages:c.messages.filter(function(m){return!m.pending&&m.role!=='tool_status'}).map(function(m){var o={id:m.id,role:m.role,content:m.content,time:m.time};if(m.error)o.error=true;if(m.toolCalls)o.toolCalls=m.toolCalls;if(m.toolCallId)o.toolCallId=m.toolCallId;if(m.toolName)o.toolName=m.toolName;if(m.toolUrl)o.toolUrl=m.toolUrl;if(m.hidden)o.hidden=true;if(m.autoHidden)o.autoHidden=true;return o}),createdAt:c.createdAt,updatedAt:c.updatedAt,titleGenerated:c.titleGenerated}}));scheduleSync(1500)}
@@ -389,7 +397,9 @@ async function evaluateContext(conv){
   if(!baseUrl||!key||!model)return null;
   var url=buildEP(baseUrl);if(!url)return null;
   var sys='你是对话上下文管理器。分析以下对话，判断哪些可安全标记为不参与上下文以节省token。\n规则：\n1.信息已被后续覆盖/重复的优先标记\n2.已解决且无后续引用的优先标记\n3.用户强调的内容不可标记\n4.如果没什么可以标记的，canHide返回空数组\n只返回JSON：{"canHide":["id1","id2"]}';
-  try{var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:model,messages:[{role:'system',content:sys},{role:'user',content:JSON.stringify(payload)}],temperature:0.1,max_tokens:200,stream:false})});if(!r.ok)return null;var txt=(await r.json()).choices?.[0]?.message?.content?.trim();if(!txt)return null;var m=txt.match(/\{[\s\S]*\}/);return m?JSON.parse(m[0]):null}catch(e){console.error('eval:',e);return null}}
+  try{var body={model:model,messages:[{role:'system',content:sys},{role:'user',content:JSON.stringify(payload)}],max_tokens:200,stream:false};
+    if(S.s.temperature!=null&&!isNaN(S.s.temperature))body.temperature=0.1;
+    var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body)});if(!r.ok)return null;var txt=(await r.json()).choices?.[0]?.message?.content?.trim();if(!txt)return null;var m=txt.match(/\{[\s\S]*\}/);return m?JSON.parse(m[0]):null}catch(e){console.error('eval:',e);return null}}
 
 function hideTurn(conv,i){
   if(i<0)return 0;
@@ -398,11 +408,7 @@ function hideTurn(conv,i){
   var n=0;
   for(var j=i;j<conv.messages.length;j++){
     if(j>i&&conv.messages[j].role==='user')break;
-    if(!conv.messages[j].hidden){
-      conv.messages[j].hidden=true;
-      conv.messages[j].autoHidden=true;
-      n++;
-    }
+    if(!conv.messages[j].hidden){conv.messages[j].hidden=true;conv.messages[j].autoHidden=true;n++}
   }
   return n;
 }
@@ -410,25 +416,17 @@ function hideTurn(conv,i){
 function applyAutoHide(conv,result){
   if(!result||!Array.isArray(result.canHide)||!result.canHide.length)return 0;
   var n=0;
-  result.canHide.forEach(function(id){
-    var i=conv.messages.findIndex(function(m){return m.id===id});
-    if(i!==-1)n+=hideTurn(conv,i);
-  });
+  result.canHide.forEach(function(id){var i=conv.messages.findIndex(function(m){return m.id===id});if(i!==-1)n+=hideTurn(conv,i)});
   if(n){conv.updatedAt=new Date().toISOString();persistConv()}
   return n;
 }
 
 function fallbackTrim(conv,threshold){
   var users=[];
-  conv.messages.forEach(function(m,i){
-    if(m.role==='user'&&!m.hidden&&!m.pending)users.push(i);
-  });
+  conv.messages.forEach(function(m,i){if(m.role==='user'&&!m.hidden&&!m.pending)users.push(i)});
   if(users.length<=1)return 0;
   var n=0;
-  for(var k=0;k<users.length-1;k++){
-    n+=hideTurn(conv,users[k]);
-    if(estimateChars(conv.messages)<=threshold)break;
-  }
+  for(var k=0;k<users.length-1;k++){n+=hideTurn(conv,users[k]);if(estimateChars(conv.messages)<=threshold)break}
   if(n){conv.updatedAt=new Date().toISOString();persistConv()}
   return n;
 }
@@ -436,19 +434,15 @@ function fallbackTrim(conv,threshold){
 async function trimAfterReply(){
   if(S.s.autoHideEnabled===false||_evaluating)return;
   var c=aConv();if(!c)return;
-  var cid=c.id;
-  var threshold=S.s.contextThreshold||60000;
-  var total=estimateChars(c.messages);
+  var cid=c.id,threshold=S.s.contextThreshold||60000,total=estimateChars(c.messages);
   if(total<=threshold)return;
-  _evaluating=true;
-  status('正在评估上下文...');
+  _evaluating=true;status('正在评估上下文...');
   try{
-    var result=await evaluateContext(c);
-    if(aConv()?.id!==cid)return;
+    var result=await evaluateContext(c);if(aConv()?.id!==cid)return;
     var n=applyAutoHide(c,result);
-    if(!n){n=fallbackTrim(c,threshold)}
+    if(!n)n=fallbackTrim(c,threshold);
     if(n){renderConv();render();safeInitMonaco();status('已裁剪 '+n+' 条消息')}
-    else{status('评估完成：没有可裁剪的旧消息')}
+    else status('评估完成：没有可裁剪的旧消息')
   }catch(e){console.error('auto trim:',e);status('上下文评估失败')}
   finally{_evaluating=false}
 }
@@ -471,8 +465,7 @@ async function reply(mid){
   var c=aConv();if(!c)return;var ai=c.messages.find(function(x){return x.id===mid});if(!ai)return;
   S.ctl=new AbortController();refreshUI();status('正在生成...');
   var t0=Date.now();
-  var url=ep(),msgs=buildMsgs(c,ai);
-  var body={model:S.s.model,messages:msgs,temperature:S.s.temperature,stream:true};
+  var url=ep(),msgs=buildMsgs(c,ai),body=buildReqBody({messages:msgs,stream:true});
   var res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});
   if(!res.ok)throw new Error(await res.text()||'HTTP '+res.status);
   var ct=res.headers.get('content-type')||'';
@@ -500,7 +493,8 @@ function procSSE(ev,tCb){ev.split('\n').forEach(function(ln){if(!ln.startsWith('
   try{var j=JSON.parse(t),c=j.choices?.[0];if(c?.delta?.content)tCb(c.delta.content)}catch(e){}})}
 
 async function genTitle(c){if(!S.s?.baseUrl||!S.s?.apiKey)return;try{
-  var r=await fetch(ep(),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify({model:S.s.model,messages:[{role:'system',content:'用不超过15个字概括对话主题，只输出标题'},{role:'user',content:c.messages.filter(function(m){return m.role==='user'&&!m.hidden}).slice(0,2).map(function(m){return m.content}).join('\n')}],temperature:.7,max_tokens:30,stream:false})});
+  var body=buildReqBody({messages:[{role:'system',content:'用不超过15个字概括对话主题，只输出标题'},{role:'user',content:c.messages.filter(function(m){return m.role==='user'&&!m.hidden}).slice(0,2).map(function(m){return m.content}).join('\n')}],max_tokens:30});
+  var r=await fetch(ep(),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body)});
   if(!r.ok)return;var t=(await r.json()).choices?.[0]?.message?.content?.trim();
   if(t){c.title=t.slice(0,20);c.titleGenerated=true;c.updatedAt=new Date().toISOString();persistConv();renderConv()}}catch(e){}}
 
@@ -543,13 +537,10 @@ function applyCollapse(){if(S.ctl)return;var ch=240;
 
 function updStream(ai){
   var el=_streamEl&&_streamEl.isConnected?_streamEl:$('[data-mid="'+ai.id+'"]');
-  _streamEl=el;
-  if(!el){render();return}
-  _streamContent=ai.content;
-  if(_streamTimer)return;
+  _streamEl=el;if(!el){render();return}
+  _streamContent=ai.content;if(_streamTimer)return;
   _streamTimer=requestAnimationFrame(function(){
-    _streamTimer=0;
-    if(!_streamEl)return;
+    _streamTimer=0;if(!_streamEl)return;
     var bd=_streamEl.querySelector('.msg-bd');
     if(bd)bd.innerHTML=renderMd(_streamContent);
     if(ascroll)U.msgs.scrollTop=U.msgs.scrollHeight;
@@ -572,18 +563,12 @@ function normConvs(arr){return(arr||[]).filter(function(x){return x&&x.id&&Array
 function applyRemote(remote){if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}_applyingRemote=true;try{var rd=remote.deletedConversations&&typeof remote.deletedConversations==='object'?remote.deletedConversations:{};Object.keys(rd).forEach(function(id){if(stamp(rd[id])>stamp(S.sy.d[id]))S.sy.d[id]=rd[id]});persistSy();if(remote.settings&&stamp(remote.settingsUpdatedAt||remote.ts)>stamp(S.sy.sa)){write(K.s,clone(remote.settings));S.sy.sa=remote.settingsUpdatedAt||remote.ts||new Date().toISOString();persistSy()}if(Array.isArray(remote.conversations)){var map={};S.c.forEach(function(c){if(stamp(S.sy.d[c.id])<stamp(c.updatedAt))map[c.id]=c});remote.conversations.forEach(function(rc){if(!rc||!rc.id||!Array.isArray(rc.messages))return;var rt=stamp(rc.updatedAt);if(stamp(S.sy.d[rc.id])>=rt)return;map[rc.id]=mergeConv(map[rc.id],rc)});S.c=normConvs(Object.values(map)).sort(function(a,b){return stamp(b.updatedAt)-stamp(a.updatedAt)})}var raw2=read(K.s,null);if(raw2&&Array.isArray(raw2.profiles)){S.p=raw2.profiles.map(normP);S.ap=S.p.find(function(x){return x.id===raw2.activeProfileId})?raw2.activeProfileId:S.p[0]?.id}else{S.p=[normP(raw2||{})];S.ap=S.p[0].id}S.s=S.p.find(function(x){return x.id===S.ap})||S.p[0];S.ap=S.s.id;if(!S.c.length)mkConv();S.ac=S.c.find(function(x){return x.id===S.ac})?S.ac:S.c[0]?.id;persistConv();fillForm();renderConv();render();safeInitMonaco();refreshUI()}finally{_applyingRemote=false}}
 
 async function readRemote(gid){
-  var g=await ghAPI('gists/'+gid);
-  var f=g.files&&g.files['sync.json'];
+  var g=await ghAPI('gists/'+gid),f=g.files&&g.files['sync.json'];
   if(!f)return null;
   var raw=f.content||'{}';
   if(f.truncated&&f.raw_url){
-    try{
-      var rr=await fetch(f.raw_url+'?t='+Date.now(),{cache:'no-store'});
-      if(!rr.ok)throw new Error('HTTP '+rr.status);
-      raw=await rr.text();
-    }catch(e){
-      throw new Error('无法读取截断的 sync.json：'+e.message);
-    }
+    try{var rr=await fetch(f.raw_url+'?t='+Date.now(),{cache:'no-store'});if(!rr.ok)throw new Error('HTTP '+rr.status);raw=await rr.text()}
+    catch(e){throw new Error('无法读取截断的 sync.json：'+e.message)}
   }
   try{return JSON.parse(raw||'{}')}catch(e){throw new Error('云端 sync.json 不是合法 JSON')}
 }
