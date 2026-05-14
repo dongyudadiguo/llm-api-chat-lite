@@ -380,11 +380,8 @@ function buildEvalPayload(conv){return conv.messages.filter(function(m){return!m
 function buildEP(baseUrl){
   var c=(baseUrl||'').trim().replace(/\/+$/,'');
   if(!c)return '';
-
   if(/\/chat\/completions$/i.test(c))return c;
-  if(/\/v1$/i.test(c))return c+'/chat/completions';
-
-  return c;
+  return c+'/v1/chat/completions';
 }
 
 async function evaluateContext(conv){
@@ -396,10 +393,8 @@ async function evaluateContext(conv){
 
 function hideTurn(conv,i){
   if(i<0)return 0;
-
   while(i>=0&&conv.messages[i].role!=='user')i--;
   if(i<0)return 0;
-
   var n=0;
   for(var j=i;j<conv.messages.length;j++){
     if(j>i&&conv.messages[j].role==='user')break;
@@ -414,85 +409,48 @@ function hideTurn(conv,i){
 
 function applyAutoHide(conv,result){
   if(!result||!Array.isArray(result.canHide)||!result.canHide.length)return 0;
-
   var n=0;
   result.canHide.forEach(function(id){
     var i=conv.messages.findIndex(function(m){return m.id===id});
     if(i!==-1)n+=hideTurn(conv,i);
   });
-
-  if(n){
-    conv.updatedAt=new Date().toISOString();
-    persistConv();
-  }
-
+  if(n){conv.updatedAt=new Date().toISOString();persistConv()}
   return n;
 }
 
 function fallbackTrim(conv,threshold){
   var users=[];
-
   conv.messages.forEach(function(m,i){
     if(m.role==='user'&&!m.hidden&&!m.pending)users.push(i);
   });
-
   if(users.length<=1)return 0;
-
   var n=0;
-
   for(var k=0;k<users.length-1;k++){
     n+=hideTurn(conv,users[k]);
     if(estimateChars(conv.messages)<=threshold)break;
   }
-
-  if(n){
-    conv.updatedAt=new Date().toISOString();
-    persistConv();
-  }
-
+  if(n){conv.updatedAt=new Date().toISOString();persistConv()}
   return n;
 }
 
 async function trimAfterReply(){
   if(S.s.autoHideEnabled===false||_evaluating)return;
-
-  var c=aConv();
-  if(!c)return;
-
+  var c=aConv();if(!c)return;
   var cid=c.id;
   var threshold=S.s.contextThreshold||60000;
   var total=estimateChars(c.messages);
-
   if(total<=threshold)return;
-
   _evaluating=true;
   status('正在评估上下文...');
-
   try{
     var result=await evaluateContext(c);
-
     if(aConv()?.id!==cid)return;
-
     var n=applyAutoHide(c,result);
-
-    if(!n){
-      n=fallbackTrim(c,threshold);
-    }
-
-    if(n){
-      renderConv();
-      render();
-      safeInitMonaco();
-      status('已裁剪 '+n+' 条消息');
-    }else{
-      status('评估完成：没有可裁剪的旧消息');
-    }
-  }catch(e){
-    console.error('auto trim:',e);
-    status('上下文评估失败');
-  }finally{
-    _evaluating=false;
-  }
+    if(!n){n=fallbackTrim(c,threshold)}
+    if(n){renderConv();render();safeInitMonaco();status('已裁剪 '+n+' 条消息')}
+    else{status('评估完成：没有可裁剪的旧消息')}
+  }catch(e){console.error('auto trim:',e);status('上下文评估失败')}
+  finally{_evaluating=false}
 }
 
 async function submit(e){
@@ -617,26 +575,17 @@ async function readRemote(gid){
   var g=await ghAPI('gists/'+gid);
   var f=g.files&&g.files['sync.json'];
   if(!f)return null;
-
   var raw=f.content||'{}';
-
   if(f.truncated&&f.raw_url){
     try{
-      var rr=await fetch(f.raw_url+'?t='+Date.now(),{
-        cache:'no-store'
-      });
+      var rr=await fetch(f.raw_url+'?t='+Date.now(),{cache:'no-store'});
       if(!rr.ok)throw new Error('HTTP '+rr.status);
       raw=await rr.text();
     }catch(e){
       throw new Error('无法读取截断的 sync.json：'+e.message);
     }
   }
-
-  try{
-    return JSON.parse(raw||'{}');
-  }catch(e){
-    throw new Error('云端 sync.json 不是合法 JSON');
-  }
+  try{return JSON.parse(raw||'{}')}catch(e){throw new Error('云端 sync.json 不是合法 JSON')}
 }
 
 async function doSync(){clearTimeout(_syncTimer);if(!S.sy.t){updateSyncUI();return}if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}if(_syncing){_syncAgain=true;return}_syncing=true;_syncAgain=false;updateSyncUI('syncing');try{var gid=S.sy.g||null;if(!gid){var found=await findSyncGist();if(found)gid=found.id}if(!gid){var created=await createSyncGist();gid=created.id}S.sy.g=gid;persistSy();var remote=null;try{remote=await readRemote(gid)}catch(e){if(e.status===404){S.sy.g='';persistSy();gid=null;var f2=await findSyncGist();if(f2)gid=f2.id;if(!gid){var c2=await createSyncGist();gid=c2.id}S.sy.g=gid;persistSy();remote=await readRemote(gid)}else throw e}var hasRemote=!!(remote&&(remote.settings||remote.theme||Array.isArray(remote.conversations)||remote.deletedConversations));if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}if(hasRemote){applyRemote(remote);applyRemoteTheme(remote)}if(S.ctl){_syncAgain=true;updateSyncUI('paused');return}if(!S.sy.ta){S.sy.ta='1970-01-01T00:00:00.000Z';persistSy()}await ghAPI('gists/'+gid,'PATCH',{files:{'sync.json':{content:JSON.stringify({app:'ai-chat-lite',settings:clone(read(K.s,null)),settingsUpdatedAt:S.sy.sa||new Date().toISOString(),theme:localStorage.getItem(K.t)||theme,themeUpdatedAt:S.sy.ta,conversations:read(K.c,[]).slice(0,50),deletedConversations:S.sy.d||{},ts:new Date().toISOString()})}}});updateSyncUI('ok');status(hasRemote?'已同步':'已创建云端同步并上传本地数据')}catch(e){updateSyncUI('error');var msg=e.message||String(e);if(e.status===401)msg='Token 无效或已过期';else if(e.status===403)msg='Token 没有 gist 权限，或 GitHub API 限流';status('同步失败：'+msg);console.error('sync:',e)}finally{_syncing=false;if(_syncAgain)scheduleSync(500)}}
