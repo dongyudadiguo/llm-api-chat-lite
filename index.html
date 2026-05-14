@@ -136,6 +136,7 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer;bo
 .btn:hover{background:var(--s3);color:var(--t)}.btn:disabled{opacity:.4;cursor:not-allowed}
 .btn-p{background:var(--a);color:#fff;border-color:var(--a)}.btn-p:hover{background:var(--a2)}
 .btn-d{color:var(--d)}.btn-d:hover{background:var(--db)}
+.sw-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;padding:10px 0;font-size:13px;color:var(--t2)}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--b);border-radius:3px}
 .sb-b::-webkit-scrollbar,.modal::-webkit-scrollbar{width:3px}
 @media(max-width:768px){.sb{width:280px}.comp{width:calc(100% - 16px)}.msgs{padding:64px 8px 148px}.fg{grid-template-columns:1fr}.pill{max-width:180px}:root{--ch:200px}}
@@ -190,7 +191,7 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer;bo
 
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 <script>
-var monacoReady=false,theme=document.documentElement.dataset.theme;
+var monacoReady=false,theme=document.documentElement.dataset.theme,monacoEditors=[];
 require.config({paths:{vs:'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'}});
 require(['vs/editor/editor.main'],function(){
   monaco.editor.defineTheme('chat-dark',{base:'vs-dark',inherit:true,rules:[],colors:{'editor.background':'#09090b','editorGutter.background':'#09090b','editor.lineHighlightBackground':'#09090b','editor.selectionBackground':'#264f7833'}});
@@ -201,18 +202,35 @@ var MOPTS={readOnly:true,domReadOnly:true,minimap:{enabled:false},scrollBeyondLa
 function curTheme(){return theme==='light'?'chat-light':'chat-dark'}
 function mapLang(l){var m={js:'javascript',ts:'typescript',py:'python',rb:'ruby',rs:'rust',sh:'shell',bash:'shell',zsh:'shell',yml:'yaml',md:'markdown',cs:'csharp',kt:'kotlin',vue:'html',dockerfile:'dockerfile'};return m[(l||'').toLowerCase()]||l||'plaintext'}
 
+function disposeMonaco(){
+  if(!monacoEditors.length)return;
+  monacoEditors.forEach(function(ed){try{ed.dispose()}catch(e){}});
+  monacoEditors=[];
+}
+window.addEventListener('beforeunload',disposeMonaco);
+
 function safeInitMonaco(){
   if(!monacoReady)return;
   document.querySelectorAll('.msg:not(.pending) .cb:not([data-monaco])').forEach(function(el){
     if(el.dataset.monaco)return;
     var pre=el.querySelector('pre');if(!pre)return;
-    var text=pre.textContent.replace(/\n$/,''),lang=el.dataset.lang||'';
-    el.dataset.monaco='done';pre.style.display='none';
+    var text=pre.textContent.replace(/\n$/,'');
+    var lang=el.dataset.lang||'';
+    el.dataset.monaco='done';
+    pre.style.display='none';
     var ediv=document.createElement('div');
-    ediv.style.height=Math.min(text.split('\n').length*18+16,400)+'px';
+    var h=Math.min(text.split('\n').length*18+16,400);
+    ediv.style.height=h+'px';
     el.appendChild(ediv);
-    if(text.split('\n').length*18+16>400){var f=document.createElement('div');f.className='monaco-fade';el.appendChild(f)}
-    try{monaco.editor.create(ediv,Object.assign({value:text,language:mapLang(lang),theme:curTheme()},MOPTS))}catch(e){pre.style.display='';ediv.remove();el.dataset.monaco=''}
+    if(h>400){var f=document.createElement('div');f.className='monaco-fade';el.appendChild(f)}
+    try{
+      var ed=monaco.editor.create(ediv,Object.assign({value:text,language:mapLang(lang),theme:curTheme()},MOPTS));
+      monacoEditors.push(ed);
+    }catch(e){
+      pre.style.display='';
+      ediv.remove();
+      delete el.dataset.monaco;
+    }
   })
 }
 
@@ -264,7 +282,7 @@ function mdBlock(t){
 }
 function inline(t){
   return esc(t)
-    .replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>')
+    .replace(/$$([^$$]+)\]$(https?:\/\/[^\s)]+)$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>')
     .replace(/`([^`]+)`/g,'<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
     .replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>');
@@ -305,7 +323,7 @@ initing=false;fillForm();renderConv();render();refreshUI();safeInitMonaco();
 if(!S.s?.apiKey||!S.s?.baseUrl||!S.s?.model)status('请先配置接口');
 U.sToken.value=S.sy.t||'';updateSyncUI();
 U.themeBtn.textContent=theme==='dark'?'☀':'☾';
-bind();if(S.sy.t)doSync();
+bind();resize();if(S.sy.t)doSync();
 
 function normP(v){var temp=Number(v.temperature);return{id:v.id||'p_'+uid(),name:(v.name||'默认方案').trim(),baseUrl:(v.baseUrl||DF.baseUrl).trim(),apiKey:(v.apiKey||'').trim(),model:(v.model||DF.model).trim(),systemPrompt:(v.systemPrompt||DF.systemPrompt).trim(),temperature:isFinite(temp)?temp:DF.temperature,autoHideEnabled:v.autoHideEnabled!==false,contextThreshold:Number(v.contextThreshold)||60000}}
 function msgObj(x){return{id:x.id||'m_'+uid(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null,hidden:!!x.hidden,autoHidden:!!x.autoHidden}}
@@ -389,6 +407,7 @@ function buildEP(baseUrl){
   var c=(baseUrl||'').trim().replace(/\/+$/,'');
   if(!c)return '';
   if(/\/chat\/completions$/i.test(c))return c;
+  if(/\/v1$/i.test(c))return c+'/chat/completions';
   return c+'/v1/chat/completions';
 }
 
@@ -397,9 +416,17 @@ async function evaluateContext(conv){
   if(!baseUrl||!key||!model)return null;
   var url=buildEP(baseUrl);if(!url)return null;
   var sys='你是对话上下文管理器。分析以下对话，判断哪些可安全标记为不参与上下文以节省token。\n规则：\n1.信息已被后续覆盖/重复的优先标记\n2.已解决且无后续引用的优先标记\n3.用户强调的内容不可标记\n4.如果没什么可以标记的，canHide返回空数组\n只返回JSON：{"canHide":["id1","id2"]}';
-  try{var body={model:model,messages:[{role:'system',content:sys},{role:'user',content:JSON.stringify(payload)}],max_tokens:200,stream:false};
+  try{
+    var body={model:model,messages:[{role:'system',content:sys},{role:'user',content:JSON.stringify(payload)}],max_tokens:200,stream:false};
     if(S.s.temperature!=null&&!isNaN(S.s.temperature))body.temperature=0.1;
-    var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body)});if(!r.ok)return null;var txt=(await r.json()).choices?.[0]?.message?.content?.trim();if(!txt)return null;var m=txt.match(/\{[\s\S]*\}/);return m?JSON.parse(m[0]):null}catch(e){console.error('eval:',e);return null}}
+    var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body)});
+    if(!r.ok)return null;
+    var txt=(await r.json()).choices?.[0]?.message?.content?.trim();
+    if(!txt)return null;
+    var m=txt.match(/\{[\s\S]*\}/);
+    return m?JSON.parse(m[0]):null;
+  }catch(e){console.error('eval:',e);return null}
+}
 
 function hideTurn(conv,i){
   if(i<0)return 0;
@@ -500,6 +527,7 @@ async function genTitle(c){if(!S.s?.baseUrl||!S.s?.apiKey)return;try{
 
 function render(opts){
   opts=opts||{};_streamEl=null;_streamTimer=0;
+  disposeMonaco();
   var c=aConv(),msgs=c?c.messages:[],el=U.msgs,prevH=el.scrollHeight,parts=[],i=0,autoCount=0;
   while(i<msgs.length){var m=msgs[i];
     if(m.role==='tool'||(m.role==='assistant'&&m.toolCalls?.length&&!m.content?.trim())){i++;continue}
