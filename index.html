@@ -279,8 +279,30 @@ function renderConv(){U.convList.innerHTML=S.c.map(function(c){
 }).join('')}
 function fmtD(v){try{var d=new Date(v),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});if(new Date(n-864e5).toDateString()===d.toDateString())return'昨天';return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}catch(e){return''}}
 
-function toggleHide(id){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===id});if(i===-1||c.messages[i].role!=='user')return;var h=!c.messages[i].hidden;for(var j=i;j<c.messages.length;j++){if(j>i&&c.messages[j].role==='user')break;c.messages[j].hidden=h}c.updatedAt=new Date().toISOString();persistConv();renderConv();render();safeInitMonaco()}
+function toggleHide(id){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===id});if(i===-1||c.messages[i].role!=='user')return;var h=!c.messages[i].hidden;for(var j=i;j<c.messages.length;j++){if(j>i&&c.messages[j].role==='user')break;c.messages[j].hidden=h}c.updatedAt=new Date().toISOString();persistConv();renderConv();updMsgDOM()}
 function hideFromAsst(aid){var c=aConv();if(!c)return;var i=c.messages.findIndex(function(m){return m.id===aid});if(i===-1)return;for(var j=i;j>=0;j--)if(c.messages[j].role==='user'){toggleHide(c.messages[j].id);return}}
+
+function updMsgDOM(){
+  var c=aConv();if(!c)return;
+  c.messages.forEach(function(m){
+    var el=document.querySelector('[data-mid="'+m.id+'"]');if(!el)return;
+    if(m.hidden)el.classList.add('out');else el.classList.remove('out');
+    var hd=el.querySelector('.msg-hd');if(!hd)return;
+    hd.querySelectorAll('.tag-ex,.msg-hide[data-hide],.msg-hide[data-include],.msg-hide[data-ha]').forEach(function(n){n.remove()});
+    var nm=hd.querySelector('.msg-nm');if(!nm)return;
+    var anchor=nm;
+    if(m.hidden){
+      var t=document.createElement('span');t.className='tag-ex';t.textContent='已排除';
+      nm.after(t);anchor=t;
+      if(!m.pending){var b=document.createElement('button');b.className='msg-hide';b.dataset.include=m.id;b.textContent='恢复';anchor.after(b)}
+    }else if(!m.pending){
+      var b=null;
+      if(m.role==='user'){b=document.createElement('button');b.className='msg-hide';b.dataset.hide=m.id;b.textContent='排除'}
+      else if(m.role==='assistant'&&!m.error&&m.content&&m.content.trim()){b=document.createElement('button');b.className='msg-hide';b.dataset.ha=m.id;b.textContent='排除'}
+      if(b)nm.after(b);
+    }
+  })
+}
 
 function bind(){
   U.form.onsubmit=submit;U.prompt.oninput=resize;
