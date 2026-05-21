@@ -411,7 +411,158 @@ async function submit(e){
 
 async function reply(mid){var c=aConv();if(!c)return;var ai=c.messages.find(function(x){return x.id===mid});if(!ai)return;S.ctl=new AbortController();refreshUI();status('正在生成...');var t0=Date.now();var url=ep(),msgs=buildMsgs(c,ai),body=buildReqBody({messages:msgs,stream:true});var res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(body),signal:S.ctl.signal});if(!res.ok)throw new Error(await res.text()||'HTTP '+res.status);var ct=res.headers.get('content-type')||'';if(/event-stream/i.test(ct)&&res.body){var fc=null;await rSSE(res,function(chunk){if(!fc){fc=Date.now();ai.latency=fc-t0}ai.content+=chunk;updStream(ai)});if(!ai.content.trim())ai.content='接口返回为空'}else{var raw=await res.text(),json;try{json=JSON.parse(raw)}catch(e){ai.content=raw||'接口返回为空';ai.latency=Date.now()-t0;throw new Error(ai.content)}var txt=json.choices?.[0]?.message?.content??'';ai.content=txt||'接口返回为空';if(!ai.latency)ai.latency=Date.now()-t0}var dur=(Date.now()-t0)/1000;if(dur>0&&ai.content.length>10)ai.speed=(ai.content.length/dur).toFixed(1);ai.pending=false;ai.error=false;if(!ai.content.trim())ai.content='接口返回为空';status('完成')}
 
-async function replyDual(mid){var c=aConv();if(!c)return;var msg=c.messages.find(function(x){return x.id===mid});if(!msg)return;S.ctl=new AbortController();refreshUI();var tc=getThinkConfig();var t0=Date.now();var msgs=buildMsgs(c,msg);var fastBody=buildReqBody({messages:msgs,stream:true});var fastUrl=ep();var thinkBody=thinkBuildBody(msgs,true);var thinkUrl=thinkBuildEP(tc.url);var thinkDone=false,fastDone=false,thinkOk=false;var thinkContent='',fastFirstToken=0,thinkFirstToken=0;var fastFailed=false;status('⚡ 快速模型响应中…');var fastPromise=(async function(){try{var res=await fetch(fastUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.s.apiKey},body:JSON.stringify(fastBody),signal:S.ctl.signal});if(!res.ok){var errText='';try{errText=await res.text()}catch(e){}throw new Error(errText||'HTTP '+res.status)}var ct=res.headers.get('content-type')||'';if(/event-stream/i.test(ct)&&res.body){await rSSE(res,function(chunk){if(thinkDone)return;if(!fastFirstToken){fastFirstToken=Date.now();msg.latency=fastFirstToken-t0}msg.content+=chunk;updStream(msg)})}else{var raw=await res.text(),json;try{json=JSON.parse(raw)}catch(e){if(!thinkDone)msg.content=raw||'接口返回为空';throw new Error(msg.content)}var txt=json.choices?.[0]?.message?.content??'';if(!thinkDone){msg.content=txt||'接口返回为空';if(!msg.latency)msg.latency=Date.now()-t0}}fastDone=true;if(!thinkDone&&msg.content.trim())initFastMonaco(msg)}catch(e){fastDone=true;if(e.name==='AbortError')throw e;fastFailed=true;if(!thinkDone){msg.error=true;msg.content='快速模型错误：'+(e.message||'未知')}}})();var thinkPromise=(async function(){try{var res=await fetch(thinkUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tc.key},body:JSON.stringify(thinkBody),signal:S.ctl.signal});if(!res.ok){var errText='';try{errText=await res.text()}catch(e){}throw new Error(errText||'HTTP '+res.status)}var ct=res.headers.get('content-type')||'';if(/event-stream/i.test(ct)&&res.body){await rSSE(res,function(chunk){if(!thinkFirstToken)thinkFirstToken=Date.now();thinkContent+=chunk})}else{var raw=await res.text(),json;try{json=JSON.parse(raw)}catch(e){throw new Error('接口返回非 JSON')}thinkContent=json.choices?.[0]?.message?.content||''}if(thinkContent.trim()){thinkDone=true;thinkOk=true;msg.content=thinkContent;msg.dualSource='think';msg.latency=fastFirstToken?fastFirstToken-t0:thinkFirstToken-t0;var totalDur=(Date.now()-t0)/1000;msg.speed=totalDur>0?(msg.content.length/totalDur).toFixed(1):null;var thinkDur=thinkFirstToken?((Date.now()-thinkFirstToken)/1000).toFixed(1):'';msg._thinkDur=thinkDur;render();safeInitMonaco();status('完成（思考模型已替换）')}}catch(e){thinkDone=true;if(e.name==='AbortError')throw e;console.error('thinking model error:',e)}})();await Promise.allSettled([fastPromise,thinkPromise]);
+async function replyDual(mid){
+  var c=aConv();if(!c)return;
+  var msg=c.messages.find(function(x){return x.id===mid});if(!msg)return;
+
+  S.ctl=new AbortController();
+  refreshUI();
+
+  var tc=getThinkConfig();
+  var t0=Date.now();
+  var msgs=buildMsgs(c,msg);
+  var fastBody=buildReqBody({messages:msgs,stream:true});
+  var fastUrl=ep();
+  var thinkBody=thinkBuildBody(msgs,true);
+  var thinkUrl=thinkBuildEP(tc.url);
+
+  var fastDone=false,thinkDone=false,thinkOk=false,fastFailed=false,finished=false;
+  var finishResolve,finishReject;
+  var finish=new Promise(function(res,rej){finishResolve=res;finishReject=rej});
+
+  function spd(txt){
+    var d=(Date.now()-t0)/1000;
+    return d>0&&txt&&txt.length>10?(txt.length/d).toFixed(1):null;
+  }
+
+  function doneOk(note){
+    if(finished)return;
+    finished=true;
+    msg.pending=false;
+    msg.error=false;
+    if(!msg.content.trim())msg.content='接口返回为空';
+    if(!msg.latency)msg.latency=Date.now()-t0;
+    if(!msg.speed)msg.speed=spd(msg.content);
+    render();
+    safeInitMonaco();
+    refreshUI();
+    status(note);
+    finishResolve();
+  }
+
+  function doneFail(note){
+    if(finished)return;
+    finished=true;
+    msg.pending=false;
+    msg.error=true;
+    if(!msg.content.trim())msg.content=note||'请求失败';
+    render();
+    safeInitMonaco();
+    refreshUI();
+    status(note);
+    finishReject(new Error(note));
+  }
+
+  function maybeFinish(){
+    if(finished)return;
+    if(thinkOk)return doneOk('完成（思考模型已替换）');
+    if(fastDone&&thinkDone){
+      if(msg.content.trim())return doneOk(fastFailed?'完成（思考模型失败，使用快速回答）':'完成（思考模型未返回，使用快速回答）');
+      return doneFail('请求失败');
+    }
+  }
+
+  status('⚡ 快速模型响应中…');
+
+  var fastPromise=(async function(){
+    try{
+      var res=await fetch(fastUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(fastBody),signal:S.ctl.signal});
+      if(!res.ok){
+        var errText='';try{errText=await res.text()}catch(e){}
+        throw new Error(errText||'HTTP '+res.status);
+      }
+      var ct=res.headers.get('content-type')||'';
+      if(/event-stream/i.test(ct)&&res.body){
+        var fc=null;
+        await rSSE(res,function(chunk){
+          if(thinkDone)return;
+          if(!fc){fc=Date.now();msg.latency=fc-t0}
+          msg.content+=chunk;
+          updStream(msg);
+        });
+      }else{
+        var raw=await res.text(),json;
+        try{json=JSON.parse(raw)}catch(e){
+          if(!thinkDone)msg.content=raw||'接口返回为空';
+          throw new Error(msg.content||'接口返回为空');
+        }
+        var txt=json.choices?.[0]?.message?.content??'';
+        if(!thinkDone){
+          msg.content=txt||'接口返回为空';
+          if(!msg.latency)msg.latency=Date.now()-t0;
+        }
+      }
+      fastDone=true;
+      maybeFinish();
+    }catch(e){
+      fastDone=true;
+      if(e.name==='AbortError')throw e;
+      fastFailed=true;
+      if(!thinkDone&&!msg.content.trim())msg.content='快速模型错误：'+(e.message||'未知');
+      maybeFinish();
+    }
+  })();
+
+  var thinkPromise=(async function(){
+    try{
+      var res=await fetch(thinkUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tc.key},body:JSON.stringify(thinkBody),signal:S.ctl.signal});
+      if(!res.ok){
+        var errText='';try{errText=await res.text()}catch(e){}
+        throw new Error(errText||'HTTP '+res.status);
+      }
+      var ct=res.headers.get('content-type')||'';
+      var thinkContent='',first=null;
+
+      if(/event-stream/i.test(ct)&&res.body){
+        await rSSE(res,function(chunk){
+          if(!first){first=Date.now();if(!msg.latency)msg.latency=first-t0}
+          thinkContent+=chunk;
+          msg.content=thinkContent;
+          updStream(msg);
+        });
+      }else{
+        var raw=await res.text(),json;
+        try{json=JSON.parse(raw)}catch(e){throw new Error('接口返回非 JSON')}
+        thinkContent=json.choices?.[0]?.message?.content||'';
+        msg.content=thinkContent;
+      }
+
+      thinkDone=true;
+      if(thinkContent.trim()){
+        thinkOk=true;
+        msg.dualSource='think';
+        msg.pending=false;
+        msg.error=false;
+        msg.speed=spd(thinkContent);
+        render();
+        safeInitMonaco();
+        refreshUI();
+        status('完成（思考模型已替换）');
+        finishResolve();
+        finished=true;
+      }else{
+        maybeFinish();
+      }
+    }catch(e){
+      thinkDone=true;
+      if(e.name==='AbortError')throw e;
+      console.error('thinking model error:',e);
+      maybeFinish();
+    }
+  })();
+
+  await finish;
+}
 // FIX #5: Promise.allSettled 吞掉 AbortError，手动重新抛出
 if(S.ctl.signal.aborted){throw new DOMException('Aborted','AbortError')}
 if(thinkOk){msg.pending=false;msg.error=false;var totalDur=(Date.now()-t0)/1000;if(totalDur>0&&msg.content.length>10&&!msg.speed)msg.speed=(msg.content.length/totalDur).toFixed(1)}else{if(fastFailed){msg.pending=false}else{msg.pending=false;msg.error=false;msg.dualSource='fast';if(!msg.latency&&fastFirstToken)msg.latency=fastFirstToken-t0;var dur=(Date.now()-t0)/1000;if(dur>0&&msg.content.length>10&&!msg.speed)msg.speed=(msg.content.length/dur).toFixed(1);status('完成（思考模型未返回，使用快速回答）')}}}
@@ -447,7 +598,19 @@ function vMsg(m){
 function fmtT(v){try{return new Date(v).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}catch(e){return''}}
 function applyCollapse(){if(S.ctl)return;var ch=240;U.msgs.querySelectorAll('.msg.u:not(.pending)').forEach(function(el,i,arr){var bd=el.querySelector('.msg-bd');if(!bd)return;var id=el.dataset.mid;if(!id)return;if(bd.scrollHeight<=ch+50)return;var isExp=exp.has(id)||i===arr.length-1;if(!isExp)bd.classList.add('collapsed');var btn=document.createElement('button');btn.className='clp';btn.textContent=isExp?'收起':'展开全文';bd.parentNode.insertBefore(btn,bd.nextSibling)})}
 
-function updStream(ai){var el=_streamEl&&_streamEl.isConnected?_streamEl:$('[data-mid="'+ai.id+'"]');_streamEl=el;if(!el){render();return}_streamContent=ai.content;if(_streamTimer)return;_streamTimer=requestAnimationFrame(function(){_streamTimer=0;if(!_streamEl)return;var bd=_streamEl.querySelector('.msg-bd');if(bd)bd.innerHTML=renderMd(_streamContent);if(ascroll)U.msgs.scrollTop=U.msgs.scrollHeight})}
+function updStream(ai){
+  var el=_streamEl&&_streamEl.isConnected?_streamEl:$('[data-mid="'+ai.id+'"]');
+  _streamEl=el;if(!el){render();return}
+  _streamContent=ai.content;
+  if(_streamTimer)return;
+  _streamTimer=requestAnimationFrame(function(){
+    _streamTimer=0;
+    if(!_streamEl)return;
+    var bd=_streamEl.querySelector('.msg-bd');
+    if(bd)bd.innerHTML=renderMd(_streamContent);
+    if(ascroll)U.msgs.scrollTop=U.msgs.scrollHeight;
+  })
+}
 
 var _syncing=false,_applyingRemote=false;
 function persistSy(){write(K.y,{t:S.sy.t,g:S.sy.g,sa:S.sy.sa,ta:S.sy.ta,d:S.sy.d||{}})}
