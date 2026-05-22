@@ -239,8 +239,7 @@ function initFastMonaco(msg){
 function renderMd(src){var raw=String(src||'').replace(/\r/g,'').split('\n'),out=[],i=0;while(i<raw.length){var line=raw[i]||'';if(/^\|/.test(line.trim())){var tl=[];while(i<raw.length&&/^\|/.test((raw[i]||'').trim()))tl.push(raw[i++]);out.push(bldTbl(tl))}else if(/^```/.test(line)){var lang=line.slice(3).trim(),lines=[];i++;while(i<raw.length&&!/^```/.test(raw[i]))lines.push(raw[i++]);if(i<raw.length)i++;var l=/^[a-zA-Z0-9_+#.\-]{1,24}$/.test(lang)?lang:'';out.push('<div class="cb'+(l?'':' nolang')+'" data-lang="'+esc(l)+'"><span class="cb-tools"><span class="cb-lang">'+esc(l)+'</span><button class="cb-cp">复制</button><button class="cb-dl">下载</button></span><pre><code>'+esc(lines.join('\n').replace(/^\n+|\n+$/g,''))+'</code></pre></div>')}else{var tl=[];while(i<raw.length&&!/^```/.test(raw[i])&&!/^\|/.test((raw[i]||'').trim()))tl.push(raw[i++]);if(tl.length)out.push(mdBlock(tl.join('\n')))}}return out.join('')||'<p></p>'}
 function bldTbl(lines){var rows=lines.map(function(l){return l.trim().replace(/^\||\|$/g,'').split('|').map(function(c){return c.trim()})});var si=rows.findIndex(function(r){return r.every(function(c){return/^[-:]+$/.test(c)})});var al=si>=0?rows[si].map(function(c){return c.startsWith(':')&&c.endsWith(':')?'center':c.endsWith(':')?'right':'left'}):[];var h='<table>';if(si>=0){h+='<thead><tr>';rows[0].forEach(function(c,ci){h+='<th'+(al[ci]?' style="text-align:'+al[ci]+'"':'')+'>'+inline(c)+'</th>'});h+='</tr></thead>'}var bs=rows.slice(si>=0?si+1:0);if(bs.length){h+='<tbody>';bs.forEach(function(r){if(r.length===1&&!r[0])return;h+='<tr>';r.forEach(function(c,ci){h+='<td'+(al[ci]?' style="text-align:'+al[ci]+'"':'')+'>'+inline(c)+'</td>'});h+='</tr>'});h+='</tbody>'}return h+'</table>'}
 function mdBlock(t){var out=[],ls=t.split('\n'),list='',qt=[];var fl=function(){if(list){out.push('</'+list+'>');list=''}};var fq=function(){if(qt.length){out.push('<blockquote>'+qt.map(inline).join('<br>')+'</blockquote>');qt=[]}};ls.forEach(function(ln){ln=ln.trim();var m;if(!ln){fl();fq()}else if(/^[-*_]{3,}$/.test(ln)){fl();fq();out.push('<hr>')}else if((m=ln.match(/^(#{1,3})\s+(.*)$/))){fl();fq();out.push('<h'+m[1].length+'>'+inline(m[2])+'</h'+m[1].length+'>')}else if((m=ln.match(/^>\s?(.*)$/))){fl();qt.push(m[1])}else if((m=ln.match(/^\d+\.\s+(.*)$/))){fq();if(list!=='ol'){fl();list='ol';out.push('<ol>')}out.push('<li>'+inline(m[1])+'</li>')}else if((m=ln.match(/^[-*+]\s+(.*)$/))){fq();if(list!=='ul'){fl();list='ul';out.push('<ul>')}out.push('<li>'+inline(m[1])+'</li>')}else{fl();fq();out.push('<p>'+inline(ln)+'</p>')}});fl();fq();return out.join('')||'<p></p>'}
-// FIX #1: Markdown 链接正则
-function inline(t){return esc(t).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>')}
+function inline(t){return esc(t).replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>')}
 
 var K={s:'ai-chat-lite:settings',c:'ai-chat-lite:conversations',y:'ai-chat-lite:sync',t:'ai-chat-lite:theme'};
 var DF={baseUrl:'https://api.openai.com/v1',apiKey:'',model:'gpt-4.1-mini',systemPrompt:'你是一个专业、准确、简洁的 AI 助手。',temperature:.7};
@@ -248,10 +247,10 @@ var TOOLS=[{
   type:'function',
   function:{
     name:'fetch_url',
-    description:'获取网页内容',
+    description:'获取网页内容。当用户询问需要联网获取的实时信息（如当前时间、新闻、最新版本、天气、股价等）时，必须使用此工具访问相关网站获取最新数据。',
     parameters:{
       type:'object',
-      properties:{url:{type:'string'}},
+      properties:{url:{type:'string',description:'要获取的网页URL'}},
       required:['url']
     }
   }
@@ -289,7 +288,6 @@ U.themeBtn.textContent=theme==='dark'?'☀':'☾';
 bind();resize();if(S.sy.t)doSync();
 
 function migrateRaw(raw){if(raw&&Array.isArray(raw.profiles)){var active=raw.profiles.find(function(x){return x.id===raw.activeProfileId})||raw.profiles[0]||{};return active}return raw||{}}
-// FIX #3: Temperature 留空不强制转 0
 function normSettings(v){
   var temp=v.temperature;
   temp=temp===null||temp===''||temp===undefined?null:Number(temp);
@@ -308,7 +306,6 @@ function normSettings(v){
 function msgObj(x){return{id:x.id||'m_'+uid(),role:x.role,content:x.content,time:x.time||new Date().toISOString(),pending:false,error:!!x.error,toolCalls:x.toolCalls||null,toolCallId:x.toolCallId||null,toolName:x.toolName||null,toolUrl:x.toolUrl||null,hidden:!!x.hidden,dualSource:x.dualSource||null}}
 function mkMsg(role,content){return{id:'m_'+uid(),role:role,content:content||'',time:new Date().toISOString(),pending:false,error:false,toolCalls:null,toolCallId:null,toolName:null,toolUrl:null,hidden:false,dualSource:null}}
 
-// FIX #4: 移除 disableThinking 非标准参数
 function buildReqBody(opts){
   var body={model:S.s.model,messages:opts.messages};
   if(S.s.temperature!=null&&!isNaN(S.s.temperature))body.temperature=S.s.temperature;
@@ -320,7 +317,7 @@ function buildReqBody(opts){
 function isDualMode(){return S.s.dualMode&&S.s.thinkModel&&S.s.thinkModel.trim()}
 function getThinkConfig(){return{url:S.s.thinkBaseUrl||S.s.baseUrl,key:S.s.thinkApiKey||S.s.apiKey,model:S.s.thinkModel||''}}
 function thinkBuildEP(baseUrl){var c=(baseUrl||'').trim().replace(/\/+$/,'');if(!c)return'';if(/\/chat\/completions$/i.test(c))return c;if(/\/v1$/i.test(c))return c+'/chat/completions';return c+'/v1/chat/completions'}
-function thinkBuildBody(messages,stream){var tc=getThinkConfig();var body={model:tc.model,messages:messages};if(stream)body.stream=true;return body}
+function thinkBuildBody(messages,stream){var tc=getThinkConfig();var body={model:tc.model,messages:messages};if(stream)body.stream=true;body.tools=TOOLS;return body}
 
 function saveSettings(){write(K.s,S.s);if(!initing&&!_applyingRemote){S.sy.sa=new Date().toISOString();persistSy()}}
 function fillForm(){U.pUrl.value=S.s.baseUrl;U.pKey.value=S.s.apiKey;U.pModel.value=S.s.model;U.pSys.value=S.s.systemPrompt;U.pTemp.value=S.s.temperature!=null?Number(S.s.temperature).toFixed(1):'';var dm=$('#pDualMode');if(dm)dm.checked=!!S.s.dualMode;var tu=$('#pThinkUrl'),tk=$('#pThinkKey'),tm=$('#pThinkModel'),tf=$('#thinkFields');if(tu)tu.value=S.s.thinkBaseUrl||'';if(tk)tk.value=S.s.thinkApiKey||'';if(tm)tm.value=S.s.thinkModel||'';if(tf)tf.style.display=S.s.dualMode?'':'none'}
@@ -420,7 +417,6 @@ async function submit(e){
   U.prompt.value='';resize();
   var dual=isDualMode(),doReply=dual?replyDual:reply;
   try{
-    if(dual)await maybeRunTools(c,ai);
     await doReply(ai.id);
     S.ctl=null;persistConv();renderConv();refreshUI();render();safeInitMonaco();
     if(!c.titleGenerated&&c.messages.filter(function(x){return!x.pending&&x.role==='user'}).length>=1)genTitle(c);
@@ -666,7 +662,7 @@ function extractTC(json){
     };
   })||[];
 }
-  
+
 async function replyDual(mid){
   var c=aConv();if(!c)return;
   var msg=c.messages.find(function(x){return x.id===mid});if(!msg)return;
@@ -676,171 +672,172 @@ async function replyDual(mid){
 
   var tc=getThinkConfig();
   var t0=Date.now();
+  var maxSteps=8;
+
   var msgs=buildMsgs(c,msg);
-  var fastBody=buildReqBody({messages:msgs,stream:true});
+  var fastBody=buildReqBody({messages:msgs,stream:true,tools:true});
   var fastUrl=ep();
   var thinkBody=thinkBuildBody(msgs,true);
   var thinkUrl=thinkBuildEP(tc.url);
 
-  var fastDone=false,thinkDone=false,fastOk=false,thinkOk=false,fastFailed=false,finished=false;
-  var resolveFn,rejectFn;
-  var finish=new Promise(function(res,rej){resolveFn=res;rejectFn=rej});
+  var thinkOk=false;
 
   function spd(txt){
     var d=(Date.now()-t0)/1000;
     return d>0&&txt&&txt.length>10?(txt.length/d).toFixed(1):null;
   }
 
-  function finishOk(note){
-    if(finished)return;
-    finished=true;
+  for(var step=0;step<maxSteps;step++){
+    var fastDone=false,fastOK=false,fastHasTC=false,fastTC=null;
+    var thinkDone=false,thinkHasTC=false,thinkTC=null;
+    var fastContent='',thinkContent='';
+
+    var finishPromise=new Promise(function(resolve){
+      var fastOK_=false,thinkOK_=false;
+      function checkDone(){if(fastOK_&&thinkOK_)resolve()}
+
+      (async function(){
+        try{
+          var res=await fetch(fastUrl,{
+            method:'POST',
+            headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},
+            body:JSON.stringify(fastBody),
+            signal:S.ctl.signal
+          });
+          if(!res.ok){fastDone=true;fastOK_=true;checkDone();return}
+          var ct=res.headers.get('content-type')||'';
+          if(/event-stream/i.test(ct)&&res.body){
+            var fc=null,tcMap={};
+            await rSSE(res,
+              function(chunk){
+                if(thinkDone&&!thinkHasTC)return;
+                if(!fc){fc=Date.now();msg.latency=fc-t0}
+                fastContent+=chunk;
+                if(thinkDone)msg.content=fastContent;
+                updStream(msg);
+              },
+              function(delta){
+                fastHasTC=true;
+                var i=delta.index||0;
+                if(!tcMap[i])tcMap[i]={id:'',type:'function',function:{name:'',arguments:''}};
+                if(delta.id)tcMap[i].id=delta.id;
+                if(delta.type)tcMap[i].type=delta.type;
+                if(delta.function?.name)tcMap[i].function.name+=delta.function.name;
+                if(delta.function?.arguments)tcMap[i].function.arguments+=delta.function.arguments;
+              }
+            );
+            if(fastHasTC)fastTC=Object.values(tcMap);
+          }else{
+            var raw=await res.text(),json;
+            try{json=JSON.parse(raw)}catch(e){
+              if(thinkDone&&!thinkHasTC)msg.content=raw||'接口返回为空';
+              fastDone=true;fastOK_=true;checkDone();return;
+            }
+            fastTC=extractTC(json);
+            var txt=json.choices?.[0]?.message?.content||'';
+            if(!fastTC||!fastTC.length){
+              if(thinkDone&&!thinkHasTC)msg.content=txt||'接口返回为空';
+              if(!msg.latency)msg.latency=Date.now()-t0;
+            }
+          }
+        }catch(e){if(e.name!=='AbortError')console.error('fast err:',e)}
+        fastDone=true;fastOK_=true;checkDone();
+      })();
+
+      (async function(){
+        try{
+          var res=await fetch(thinkUrl,{
+            method:'POST',
+            headers:{'Content-Type':'application/json',Authorization:'Bearer '+tc.key},
+            body:JSON.stringify(thinkBody),
+            signal:S.ctl.signal
+          });
+          if(!res.ok){thinkDone=true;thinkOK_=true;checkDone();return}
+          var ct=res.headers.get('content-type')||'';
+          if(/event-stream/i.test(ct)&&res.body){
+            var first=null,tcMap={};
+            await rSSE(res,
+              function(chunk){
+                if(!first){first=Date.now();if(!msg.latency)msg.latency=first-t0}
+                thinkContent+=chunk;
+                msg.content=thinkContent;
+                updStream(msg);
+              },
+              function(delta){
+                thinkHasTC=true;
+                var i=delta.index||0;
+                if(!tcMap[i])tcMap[i]={id:'',type:'function',function:{name:'',arguments:''}};
+                if(delta.id)tcMap[i].id=delta.id;
+                if(delta.type)tcMap[i].type=delta.type;
+                if(delta.function?.name)tcMap[i].function.name+=delta.function.name;
+                if(delta.function?.arguments)tcMap[i].function.arguments+=delta.function.arguments;
+              }
+            );
+            if(thinkHasTC)thinkTC=Object.values(tcMap);
+          }else{
+            var raw=await res.text(),json;
+            try{json=JSON.parse(raw)}catch(e){
+              thinkDone=true;thinkOK_=true;checkDone();return;
+            }
+            thinkTC=extractTC(json);
+            thinkContent=json.choices?.[0]?.message?.content||'';
+            if(!thinkTC||!thinkTC.length)msg.content=thinkContent;
+          }
+        }catch(e){if(e.name!=='AbortError')console.error('think err:',e)}
+        thinkDone=true;thinkOK_=true;checkDone();
+      })();
+    });
+
+    await finishPromise;
+
+    if(S.ctl.signal.aborted)throw new DOMException('Aborted','AbortError');
+
+    var usedTC=null;
+    if(thinkTC&&thinkTC.length){
+      usedTC=thinkTC;
+      await execTC(thinkTC,c,msg,step,maxSteps);
+    }else if(fastTC&&fastTC.length){
+      usedTC=fastTC;
+      await execTC(fastTC,c,msg,step,maxSteps);
+    }
+
+    if(!usedTC){
+      thinkOk=!!thinkContent.trim();
+      if(thinkOk){
+        msg.content=thinkContent;
+        msg.dualSource='think';
+      }else if(fastContent.trim()){
+        msg.content=fastContent;
+        msg.dualSource='fast';
+      }
+      break;
+    }
+
+    msgs=buildMsgs(c,msg);
+    fastBody=buildReqBody({messages:msgs,stream:true,tools:true});
+    thinkBody=thinkBuildBody(msgs,true);
+  }
+
+  if(S.ctl.signal.aborted)throw new DOMException('Aborted','AbortError');
+
+  if(thinkOk){
     msg.pending=false;
     msg.error=false;
-    if(!msg.content.trim())msg.content='接口返回为空';
-    if(!msg.latency)msg.latency=Date.now()-t0;
-    if(!msg.speed)msg.speed=spd(msg.content);
-    render();
-    safeInitMonaco();
-    refreshUI();
-    status(note||'完成');
-    resolveFn();
-  }
-
-  function finishErr(note){
-    if(finished)return;
-    finished=true;
+    var totalDur=(Date.now()-t0)/1000;
+    if(totalDur>0&&msg.content.length>10&&!msg.speed)msg.speed=(msg.content.length/totalDur).toFixed(1);
+    status('完成（思考模型已替换）');
+  }else{
+    if(!msg.content.trim()){
+      msg.content='接口返回为空';
+      msg.error=true;
+    }
     msg.pending=false;
-    msg.error=true;
-    if(!msg.content.trim())msg.content=note||'请求失败';
-    render();
-    safeInitMonaco();
-    refreshUI();
-    status(note||'请求失败');
-    rejectFn(new Error(note||'请求失败'));
+    msg.dualSource=msg.dualSource||'fast';
+    var dur=(Date.now()-t0)/1000;
+    if(dur>0&&msg.content.length>10&&!msg.speed)msg.speed=(msg.content.length/dur).toFixed(1);
+    status('完成');
   }
-
-  function maybeFinish(){
-    if(finished)return;
-    if(thinkOk)return finishOk('完成（思考模型已替换）');
-    if(fastDone&&thinkDone){
-      if(fastOk)return finishOk('完成（思考模型未返回，使用快速回答）');
-      return finishErr('请求失败');
-    }
-  }
-
-  status('⚡ 快速模型响应中…');
-
-  var fastPromise=(async function(){
-    try{
-      var res=await fetch(fastUrl,{
-        method:'POST',
-        headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},
-        body:JSON.stringify(fastBody),
-        signal:S.ctl.signal
-      });
-      if(!res.ok){
-        var errText='';try{errText=await res.text()}catch(e){}
-        throw new Error(errText||'HTTP '+res.status);
-      }
-      var ct=res.headers.get('content-type')||'';
-      if(/event-stream/i.test(ct)&&res.body){
-        var fc=null;
-        await rSSE(res,function(chunk){
-          if(thinkDone)return;
-          if(!fc){fc=Date.now();msg.latency=fc-t0}
-          msg.content+=chunk;
-          updStream(msg);
-        });
-      }else{
-        var raw=await res.text(),json;
-        try{json=JSON.parse(raw)}catch(e){
-          if(!thinkDone)msg.content=raw||'接口返回为空';
-          throw new Error(msg.content||'接口返回为空');
-        }
-        var txt=json.choices?.[0]?.message?.content??'';
-        if(!thinkDone){
-          msg.content=txt||'接口返回为空';
-          if(!msg.latency)msg.latency=Date.now()-t0;
-        }
-      }
-      fastDone=true;
-      fastOk=true;
-      maybeFinish();
-    }catch(e){
-      fastDone=true;
-      if(e.name==='AbortError')return;
-      fastFailed=true;
-      if(!thinkDone&&!msg.content.trim()){
-        msg.error=true;
-        msg.content='快速模型错误：'+(e.message||'未知');
-        render();
-        safeInitMonaco();
-      }
-      maybeFinish();
-    }
-  })();
-
-  var thinkPromise=(async function(){
-    try{
-      var res=await fetch(thinkUrl,{
-        method:'POST',
-        headers:{'Content-Type':'application/json',Authorization:'Bearer '+tc.key},
-        body:JSON.stringify(thinkBody),
-        signal:S.ctl.signal
-      });
-      if(!res.ok){
-        var errText='';try{errText=await res.text()}catch(e){}
-        throw new Error(errText||'HTTP '+res.status);
-      }
-      var ct=res.headers.get('content-type')||'';
-      var thinkContent='',first=null;
-
-      if(/event-stream/i.test(ct)&&res.body){
-        await rSSE(res,function(chunk){
-          if(!first){first=Date.now();if(!msg.latency)msg.latency=first-t0}
-          thinkContent+=chunk;
-          msg.content=thinkContent;
-          updStream(msg);
-        });
-      }else{
-        var raw=await res.text(),json;
-        try{json=JSON.parse(raw)}catch(e){throw new Error('接口返回非 JSON')}
-        thinkContent=json.choices?.[0]?.message?.content||'';
-        msg.content=thinkContent;
-        updStream(msg);
-      }
-
-      thinkDone=true;
-      if(thinkContent.trim()){
-        thinkOk=true;
-        msg.dualSource='think';
-        msg.latency=msg.latency||((first?first:Date.now())-t0);
-        msg.speed=spd(thinkContent);
-        msg.pending=false;
-        msg.error=false;
-        finished=true;
-        try{S.ctl.abort()}catch(e){}
-        render();
-        safeInitMonaco();
-        refreshUI();
-        status('完成（思考模型已替换）');
-        resolveFn();
-      }else{
-        maybeFinish();
-      }
-    }catch(e){
-      thinkDone=true;
-      if(e.name==='AbortError')return;
-      console.error('thinking model error:',e);
-      maybeFinish();
-    }
-  })();
-
-  await finish;
 }
-// FIX #5: Promise.allSettled 吞掉 AbortError，手动重新抛出
-if(S.ctl.signal.aborted){throw new DOMException('Aborted','AbortError')}
-if(thinkOk){msg.pending=false;msg.error=false;var totalDur=(Date.now()-t0)/1000;if(totalDur>0&&msg.content.length>10&&!msg.speed)msg.speed=(msg.content.length/totalDur).toFixed(1)}else{if(fastFailed){msg.pending=false}else{msg.pending=false;msg.error=false;msg.dualSource='fast';if(!msg.latency&&fastFirstToken)msg.latency=fastFirstToken-t0;var dur=(Date.now()-t0)/1000;if(dur>0&&msg.content.length>10&&!msg.speed)msg.speed=(msg.content.length/dur).toFixed(1);status('完成（思考模型未返回，使用快速回答）')}}
 
 async function rSSE(res,tCb,tcCb){
   var rd=res.body.getReader(),dec=new TextDecoder(),buf='',done=false;
@@ -899,7 +896,7 @@ function vMsg(m){
   var cls='msg '+(u?'u':'a')+(m.error?' err':'')+(m.pending?' pending':'')+(out?' out':'');
   var pf='';
   if(!u&&!m.pending&&!m.error&&m.latency!=null){
-    if(isDualMode()){var src=m.dualSource==='think'?'思考模型':m.dualSource==='fast'?'快速模型':'';var srcTag=src?'<span class="tag-'+(m.dualSource==='think'?'think':'fast')+'">'+esc(src)+'</span> ':'';pf=srcTag+'<span class="msg-pf">'+m.latency+'ms · '+(m.speed||0)+' 字/s</span>';if(m._thinkDur)pf+=' <span class="tag-think" style="opacity:.7">思考 '+m._thinkDur+'s</span>'}else{pf='<span class="msg-pf">'+m.latency+'ms · '+(m.speed||0)+' 字/s</span>'}
+    if(isDualMode()){var src=m.dualSource==='think'?'思考模型':m.dualSource==='fast'?'快速模型':'';var srcTag=src?'<span class="tag-'+(m.dualSource==='think'?'think':'fast')+'">'+esc(src)+'</span> ':'';pf=srcTag+'<span class="msg-pf">'+m.latency+'ms · '+(m.speed||0)+' 字/s</span>'}else{pf='<span class="msg-pf">'+m.latency+'ms · '+(m.speed||0)+' 字/s</span>'}
   }
   var dualTag='';if(!u&&m.pending&&isDualMode()&&!m.error)dualTag='<span class="tag-thinking">⏳ 等待思考模型…</span> ';
   var outTag=out?'<span class="tag-ex">已排除</span>':'';
@@ -935,7 +932,6 @@ function applyRemote(remote){if(S.ctl){updateSyncUI('error');return}_applyingRem
 async function readRemote(gid){var g=await ghAPI('gists/'+gid),f=g.files&&g.files['sync.json'];if(!f)return null;var raw=f.content||'{}';if(f.truncated&&f.raw_url){try{var rr=await fetch(f.raw_url+'?t='+Date.now(),{cache:'no-store'});if(!rr.ok)throw new Error('HTTP '+rr.status);raw=await rr.text()}catch(e){throw new Error('无法读取截断的 sync.json：'+e.message)}}try{return JSON.parse(raw||'{}')}catch(e){throw new Error('云端 sync.json 不是合法 JSON')}}
 
 async function doSync(){if(!S.sy.t){updateSyncUI();return}if(_syncing)return;_syncing=true;updateSyncUI('syncing');try{var gid=S.sy.g||null;if(!gid){var found=await findSyncGist();if(found)gid=found.id}if(!gid){var created=await createSyncGist();gid=created.id}S.sy.g=gid;persistSy();var remote=null;try{remote=await readRemote(gid)}catch(e){if(e.status===404){S.sy.g='';persistSy();gid=null;var f2=await findSyncGist();if(f2)gid=f2.id;if(!gid){var c2=await createSyncGist();gid=c2.id}S.sy.g=gid;persistSy();remote=await readRemote(gid)}else throw e}var hasRemote=!!(remote&&(remote.settings||remote.theme||Array.isArray(remote.conversations)||remote.deletedConversations));if(hasRemote){applyRemote(remote);applyRemoteTheme(remote)}if(!S.sy.ta){S.sy.ta='1970-01-01T00:00:00.000Z';persistSy()}await ghAPI('gists/'+gid,'PATCH',{files:{'sync.json':{content:JSON.stringify({app:'ai-chat-lite',settings:clone(S.s),settingsUpdatedAt:S.sy.sa||new Date().toISOString(),theme:localStorage.getItem(K.t)||theme,themeUpdatedAt:S.sy.ta,conversations:read(K.c,[]).slice(0,50),deletedConversations:S.sy.d||{},ts:new Date().toISOString()})}}});updateSyncUI('ok');status(hasRemote?'已同步':'已创建云端同步并上传本地数据')}catch(e){updateSyncUI('error');var msg=e.message||String(e);if(e.status===401)msg='Token 无效或已过期';else if(e.status===403)msg='Token 没有 gist 权限，或 GitHub API 限流';status('同步失败：'+msg);console.error('sync:',e)}finally{_syncing=false}}
-// FIX #2: res → r
 async function ghAPI(path,method,body){var headers={Authorization:'Bearer '+S.sy.t,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};if(body)headers['Content-Type']='application/json';var opts={method:method||'GET',headers:headers};if(body)opts.body=JSON.stringify(body);var r=await fetch('https://api.github.com/'+path,opts),txt=await r.text(),data=null;if(txt){try{data=JSON.parse(txt)}catch(e){data=txt}}if(!r.ok){var err=new Error(data&&data.message?data.message:txt||('HTTP '+r.status));err.status=r.status;err.data=data;throw err}return data}
 </script>
 </body>
