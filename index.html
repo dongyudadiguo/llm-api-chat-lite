@@ -699,6 +699,9 @@ async function replyDual(mid){
     var fastDone=false,fastOK=false,fastHasTC=false,fastTC=null;
     var thinkDone=false,thinkHasTC=false,thinkTC=null;
     var fastContent='',thinkContent='';
+    
+    // 标记思考模型是否已经开始产出有效内容
+    var thinkStarted=false;
 
     var finishPromise=new Promise(function(resolve){
       var fastOK_=false,thinkOK_=false;
@@ -718,11 +721,15 @@ async function replyDual(mid){
             var fc=null,tcMap={};
             await rSSE(res,
               function(chunk){
-                if(thinkDone&&!thinkHasTC)return;
-                if(!fc){fc=Date.now();msg.latency=fc-t0}
-                fastContent+=chunk;
-                if(thinkDone)msg.content=fastContent;
-                updStream(msg);
+                // 【核心修复】移除错误的拦截逻辑
+                // 只要思考模型还没开始产出内容，就显示快速模型的内容
+                // 一旦思考模型开始产出，后续由思考模型的回调负责覆盖
+                if(!thinkStarted){
+                  if(!fc){fc=Date.now();msg.latency=fc-t0}
+                  fastContent+=chunk;
+                  msg.content=fastContent;
+                  updStream(msg);
+                }
               },
               function(delta){
                 fastHasTC=true;
@@ -738,14 +745,16 @@ async function replyDual(mid){
           }else{
             var raw=await res.text(),json;
             try{json=JSON.parse(raw)}catch(e){
-              if(thinkDone&&!thinkHasTC)msg.content=raw||'接口返回为空';
+              if(!thinkStarted)msg.content=raw||'接口返回为空';
               fastDone=true;fastOK_=true;checkDone();return;
             }
             fastTC=extractTC(json);
             var txt=json.choices?.[0]?.message?.content||'';
             if(!fastTC||!fastTC.length){
-              if(thinkDone&&!thinkHasTC)msg.content=txt||'接口返回为空';
-              if(!msg.latency)msg.latency=Date.now()-t0;
+              if(!thinkStarted){
+                msg.content=txt||'接口返回为空';
+                if(!msg.latency)msg.latency=Date.now()-t0;
+              }
             }
           }
         }catch(e){if(e.name!=='AbortError')console.error('fast err:',e)}
@@ -768,6 +777,8 @@ async function replyDual(mid){
               function(chunk){
                 if(!first){first=Date.now();if(!msg.latency)msg.latency=first-t0}
                 thinkContent+=chunk;
+                // 思考模型一旦有内容，立即标记并覆盖界面
+                if(!thinkStarted && chunk.trim()) thinkStarted = true;
                 msg.content=thinkContent;
                 updStream(msg);
               },
@@ -789,7 +800,10 @@ async function replyDual(mid){
             }
             thinkTC=extractTC(json);
             thinkContent=json.choices?.[0]?.message?.content||'';
-            if(!thinkTC||!thinkTC.length)msg.content=thinkContent;
+            if(!thinkTC||!thinkTC.length){
+              thinkStarted = true;
+              msg.content=thinkContent;
+            }
           }
         }catch(e){if(e.name!=='AbortError')console.error('think err:',e)}
         thinkDone=true;thinkOK_=true;checkDone();
