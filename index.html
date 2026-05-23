@@ -88,7 +88,7 @@ function renderMd(src){var raw=String(src||'').replace(/\r/g,'').split('\n'),out
 function renderMdLite(src){var escaped=esc(src);escaped=escaped.replace(/\n/g,'<br>');escaped=escaped.replace(/`([^`]+)`/g,'<code>$1</code>');escaped=escaped.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');escaped=escaped.replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>');return '<p>'+escaped+'</p>'}
 function bldTbl(lines){var rows=lines.map(function(l){return l.trim().replace(/^\||\|$/g,'').split('|').map(function(c){return c.trim()})});var si=rows.findIndex(function(r){return r.every(function(c){return/^[-:]+$/.test(c)})});var al=si>=0?rows[si].map(function(c){return c.startsWith(':')&&c.endsWith(':')?'center':c.endsWith(':')?'right':'left'}):[];var h='<table>';if(si>=0){h+='<thead><tr>';rows[0].forEach(function(c,ci){h+='<th'+(al[ci]?' style="text-align:'+al[ci]+'"':'')+'>'+inline(c)+'</th>'});h+='</tr></thead>'}var bs=rows.slice(si>=0?si+1:0);if(bs.length){h+='<tbody>';bs.forEach(function(r){if(r.length===1&&!r[0])return;h+='<tr>';r.forEach(function(c,ci){h+='<td'+(al[ci]?' style="text-align:'+al[ci]+'"':'')+'>'+inline(c)+'</td>'});h+='</tr>'});h+='</tbody>'}return h+'</table>'}
 function mdBlock(t){var out=[],ls=t.split('\n'),list='',qt=[];var fl=function(){if(list){out.push('</'+list+'>');list=''}};var fq=function(){if(qt.length){out.push('<blockquote>'+qt.map(inline).join('<br>')+'</blockquote>');qt=[]}};ls.forEach(function(ln){ln=ln.trim();var m;if(!ln){fl();fq()}else if(/^[-*_]{3,}$/.test(ln)){fl();fq();out.push('<hr>')}else if((m=ln.match(/^(#{1,3})\s+(.*)$/))){fl();fq();out.push('<h'+m[1].length+'>'+inline(m[2])+'</h'+m[1].length+'>')}else if((m=ln.match(/^>\s?(.*)$/))){fl();qt.push(m[1])}else if((m=ln.match(/^\d+\.\s+(.*)$/))){fq();if(list!=='ol'){fl();list='ol';out.push('<ol>')}out.push('<li>'+inline(m[1])+'</li>')}else if((m=ln.match(/^[-*+]\s+(.*)$/))){fq();if(list!=='ul'){fl();list='ul';out.push('<ul>')}out.push('<li>'+inline(m[1])+'</li>')}else{fl();fq();out.push('<p>'+inline(ln)+'</p>')}});fl();fq();return out.join('')||'<p></p>'}
-function inline(t){return esc(t).replace(/$$([^$$]+)\]$$(https?:\/\/[^\s)]+)$$/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>')}
+function inline(t){return esc(t).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g,'$1<em>$2</em>')}
 var K={s:'ai-chat-lite:settings',c:'ai-chat-lite:conversations',y:'ai-chat-lite:sync',t:'ai-chat-lite:theme'};
 var DF={baseUrl:'https://api.openai.com/v1',apiKey:'',model:'gpt-4.1-mini',systemPrompt:'你是一个专业、准确、简洁的 AI 助手。',temperature:.7};
 var TOOLS=[{type:'function',function:{name:'fetch_url',description:'获取网页内容。当用户询问需要联网获取的实时信息（如当前时间、新闻、最新版本、天气、股价等）时，必须使用此工具访问相关网站获取最新数据。',parameters:{type:'object',properties:{url:{type:'string',description:'要获取的网页URL'}},required:['url']}}}];
@@ -194,8 +194,6 @@ async function submit(e){
   catch(err){var t=c.messages.find(function(x){return x.id===ai.id});if(t){t.pending=false;t.error=err?.name!=='AbortError';t.content=err?.name==='AbortError'?(t.content||'已停止'):'请求失败：'+(err?.message||'未知')}status(err?.name==='AbortError'?'已停止':'请求失败')}
   finally{S.ctl=null;persistConv();renderConv();refreshUI();render();safeInitMonaco();U.prompt.focus()}
 }
-
-// 核心修复：finalizeRender 现在接收 msgId 字符串，避免对象引用问题
 function finalizeRender(msgId){
   if(_streamTimer){cancelAnimationFrame(_streamTimer);_streamTimer=0}
   _streamEl=null;_streamContent=null;
@@ -203,9 +201,7 @@ function finalizeRender(msgId){
   if(el){
     var bd=el.querySelector('.msg-bd');
     if(bd){
-      // 从 DOM 中重新读取最新内容，确保拿到的是最后一次 updStream 写入的值
-      // 但更可靠的方式是从内存中的 msg 对象读取，这里我们依赖调用方已更新 msg.content
-      // 由于 finalizeRender 是同步调用，msg.content 已经是最新的
+      bd._tn=null;
       var c=aConv();
       var msg=c&&c.messages.find(function(m){return m.id===msgId});
       if(msg&&msg.content){
@@ -215,7 +211,6 @@ function finalizeRender(msgId){
     }
   }
 }
-
 async function reply(mid){
   var c=aConv();if(!c)return;var ai=c.messages.find(function(x){return x.id===mid});if(!ai)return;
   S.ctl=new AbortController();refreshUI();status('正在生成...');
@@ -277,21 +272,11 @@ async function replyDual(mid){
     var thinkDone=false,thinkHasTC=false,thinkTC=null;
     var fastContent='',thinkContent='';
     var thinkOverridden=false;
-    // 用于标记是否已经触发过 finalizeRender，防止重复执行
     var finalized=false;
-    
     var finishPromise=new Promise(function(resolve){
       var fastOK_=false,thinkOK_=false;
       function checkDone(){if(fastOK_&&thinkOK_)resolve()}
-      
-      // 核心修复：在 SSE 回调中检测到 [DONE] 时立即触发渲染，不等流关闭
-      function tryFinalize(source){
-        if(finalized)return;
-        finalized=true;
-        // 立即清除流式锁并渲染
-        finalizeRender(msg.id);
-      }
-
+      function tryFinalize(source){if(finalized)return;finalized=true;finalizeRender(msg.id);}
       (async function(){
         try{
           var res=await fetch(fastUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.s.apiKey},body:JSON.stringify(fastBody),signal:S.ctl.signal});
@@ -346,7 +331,6 @@ async function replyDual(mid){
       thinkOk=thinkOverridden&&!!thinkContent.trim();
       if(thinkOk){msg.content=thinkContent;msg.dualSource='think'}
       else if(fastContent.trim()){msg.content=fastContent;msg.dualSource='fast'}
-      // 兜底：如果 SSE 的 onDone 没触发（比如非流式响应），这里补一次
       if(!finalized)finalizeRender(msg.id);
       break;
     }
@@ -357,8 +341,6 @@ async function replyDual(mid){
   else{if(!msg.content.trim()){msg.content='接口返回为空';msg.error=true}msg.pending=false;msg.dualSource=msg.dualSource||'fast';var dur=(Date.now()-t0)/1000;if(dur>0&&msg.content.length>10&&!msg.speed)msg.speed=(msg.content.length/dur).toFixed(1);status('完成')}
   finalizeRender(msg.id);
 }
-
-// 核心修复：rSSE 新增 onDone 回调，在解析到 [DONE] 时立即同步触发，不等 reader 关闭
 async function rSSE(res,tCb,tcCb,onDone){
   var rd=res.body.getReader(),dec=new TextDecoder(),buf='',done=false;
   try{
@@ -389,7 +371,6 @@ function procSSE(ev,tCb,tcCb,onDone){
     var t=ln.slice(5).trim();
     if(t==='[DONE]'){
       done=true;
-      // 关键修复：检测到 [DONE] 立即同步触发渲染，不等流关闭
       if(onDone)onDone();
       return;
     }
@@ -421,7 +402,7 @@ function vMsg(m){
 }
 function fmtT(v){try{return new Date(v).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}catch(e){return''}}
 function applyCollapse(){if(S.ctl)return;var ch=240;U.msgs.querySelectorAll('.msg.u:not(.pending)').forEach(function(el,i,arr){var bd=el.querySelector('.msg-bd');if(!bd)return;var id=el.dataset.mid;if(!id)return;if(bd.scrollHeight<=ch+50)return;var isExp=exp.has(id)||i===arr.length-1;if(!isExp)bd.classList.add('collapsed');var btn=document.createElement('button');btn.className='clp';btn.textContent=isExp?'收起':'展开全文';bd.parentNode.insertBefore(btn,bd.nextSibling)})}
-function updStream(ai){var el=_streamEl&&_streamEl.isConnected?_streamEl:$('[data-mid="'+ai.id+'"]');_streamEl=el;if(!el){render();return}_streamContent=ai.content;if(_streamTimer)return;_streamTimer=requestAnimationFrame(function(){_streamTimer=0;if(!_streamEl)return;var bd=_streamEl.querySelector('.msg-bd');if(!bd)return;if(!_streamContent){if(!bd.querySelector('.typing'))bd.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';return}bd.innerHTML=renderMdLite(_streamContent);if(ascroll)U.msgs.scrollTop=U.msgs.scrollHeight})}
+function updStream(ai){var el=_streamEl&&_streamEl.isConnected?_streamEl:$('[data-mid="'+ai.id+'"]');_streamEl=el;if(!el){render();return}_streamContent=ai.content;if(_streamTimer)return;_streamTimer=requestAnimationFrame(function(){_streamTimer=0;if(!_streamEl)return;var bd=_streamEl.querySelector('.msg-bd');if(!bd)return;if(!bd._tn){bd.innerHTML='';bd._tn=document.createTextNode('');bd.appendChild(bd._tn)}if(!_streamContent){bd.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';bd._tn=null;return}bd._tn.nodeValue=_streamContent;if(ascroll)U.msgs.scrollTop=U.msgs.scrollHeight})}
 var _syncing=false,_applyingRemote=false;
 function persistSy(){write(K.y,{t:S.sy.t,g:S.sy.g,sa:S.sy.sa,ta:S.sy.ta,d:S.sy.d||{}})}
 function stamp(v){var n=new Date(v||0).getTime();return isFinite(n)?n:0}
@@ -431,12 +412,12 @@ async function findSyncGist(){for(var p=1;p<=20;p++){var l=await ghAPI('gists?pe
 async function createSyncGist(){return ghAPI('gists','POST',{description:'AI Chat Lite Sync',public:false,files:{'sync.json':{content:'{}'}}})}
 function validMsg(m){return m&&({user:1,assistant:1,tool:1}[m.role])&&typeof m.content==='string'}
 function clone(s){return s==null?s:JSON.parse(JSON.stringify(s))}
-function mergeMsgs(a,b,pb){var map={},ids=[],base=pb?(b||[]):(a||[]),extra=pb?(a||[]):(b||[]);function add(m,rep){if(!validMsg(m))return;var n=msgObj(m);if(!map[n.id]){map[n.id]=n;ids.push(n.id)}else if(rep)map[n.id]=n}base.forEach(function(m){add(m,true)});extra.forEach(function(m){add(m,false)});return ids.map(function(id){return map[id]})}
-function mergeConv(l,r){if(!l)return r;if(!r)return l;var lu=stamp(l.updatedAt),ru=stamp(r.updatedAt),base=ru>=lu?r:l,ct=stamp(l.createdAt)&&stamp(r.createdAt)?(stamp(l.createdAt)<stamp(r.createdAt)?l.createdAt:r.createdAt):(l.createdAt||r.createdAt||new Date().toISOString());return{id:base.id,title:base.title||'新对话',messages:mergeMsgs(l.messages,r.messages,ru>=lu),createdAt:ct,updatedAt:base.updatedAt||new Date().toISOString(),titleGenerated:!!base.titleGenerated}}
+function mergeConv(l,r){if(!l)return r;if(!r)return l;return stamp(r.updatedAt)>=stamp(l.updatedAt)?r:l}
 function normConvs(arr){return(arr||[]).filter(function(x){return x&&x.id&&Array.isArray(x.messages)}).map(function(x){return{id:x.id,title:x.title||'新对话',messages:(x.messages||[]).filter(validMsg).map(msgObj),createdAt:x.createdAt||new Date().toISOString(),updatedAt:x.updatedAt||new Date().toISOString(),titleGenerated:!!x.titleGenerated}})}
+function cleanD(d){if(!d)return{};var k=Object.keys(d);if(k.length>100){k.sort(function(a,b){return stamp(d[b])-stamp(d[a])});var n={};k.slice(0,100).forEach(function(x){n[x]=d[x]});return n}return d}
 function applyRemote(remote){if(S.ctl){updateSyncUI('error');return}_applyingRemote=true;try{var rd=remote.deletedConversations&&typeof remote.deletedConversations==='object'?remote.deletedConversations:{};Object.keys(rd).forEach(function(id){if(stamp(rd[id])>stamp(S.sy.d[id]))S.sy.d[id]=rd[id]});persistSy();if(remote.settings&&stamp(remote.settingsUpdatedAt||remote.ts)>stamp(S.sy.sa)){S.s=normSettings(migrateRaw(clone(remote.settings)));write(K.s,S.s);S.sy.sa=remote.settingsUpdatedAt||remote.ts||new Date().toISOString();persistSy()}if(Array.isArray(remote.conversations)){var map={};S.c.forEach(function(c){if(stamp(S.sy.d[c.id])<stamp(c.updatedAt))map[c.id]=c});remote.conversations.forEach(function(rc){if(!rc||!rc.id||!Array.isArray(rc.messages))return;var rt=stamp(rc.updatedAt);if(stamp(S.sy.d[rc.id])>=rt)return;map[rc.id]=mergeConv(map[rc.id],rc)});S.c=normConvs(Object.values(map)).sort(function(a,b){return stamp(b.updatedAt)-stamp(a.updatedAt)})}if(!S.c.length)mkConv();S.ac=S.c.find(function(x){return x.id===S.ac})?S.ac:S.c[0]?.id;persistConv();fillForm();renderConv();render();safeInitMonaco();refreshUI()}finally{_applyingRemote=false}}
 async function readRemote(gid){var g=await ghAPI('gists/'+gid),f=g.files&&g.files['sync.json'];if(!f)return null;var raw=f.content||'{}';if(f.truncated&&f.raw_url){try{var rr=await fetch(f.raw_url+'?t='+Date.now(),{cache:'no-store'});if(!rr.ok)throw new Error('HTTP '+rr.status);raw=await rr.text()}catch(e){throw new Error('无法读取截断的 sync.json：'+e.message)}}try{return JSON.parse(raw||'{}')}catch(e){throw new Error('云端 sync.json 不是合法 JSON')}}
-async function doSync(){if(!S.sy.t){updateSyncUI();return}if(_syncing)return;_syncing=true;updateSyncUI('syncing');try{var gid=S.sy.g||null;if(!gid){var found=await findSyncGist();if(found)gid=found.id}if(!gid){var created=await createSyncGist();gid=created.id}S.sy.g=gid;persistSy();var remote=null;try{remote=await readRemote(gid)}catch(e){if(e.status===404){S.sy.g='';persistSy();gid=null;var f2=await findSyncGist();if(f2)gid=f2.id;if(!gid){var c2=await createSyncGist();gid=c2.id}S.sy.g=gid;persistSy();remote=await readRemote(gid)}else throw e}var hasRemote=!!(remote&&(remote.settings||remote.theme||Array.isArray(remote.conversations)||remote.deletedConversations));if(hasRemote){applyRemote(remote);applyRemoteTheme(remote)}if(!S.sy.ta){S.sy.ta='1970-01-01T00:00:00.000Z';persistSy()}await ghAPI('gists/'+gid,'PATCH',{files:{'sync.json':{content:JSON.stringify({app:'ai-chat-lite',settings:clone(S.s),settingsUpdatedAt:S.sy.sa||new Date().toISOString(),theme:localStorage.getItem(K.t)||theme,themeUpdatedAt:S.sy.ta,conversations:read(K.c,[]).slice(0,50),deletedConversations:S.sy.d||{},ts:new Date().toISOString()})}}});updateSyncUI('ok');status(hasRemote?'已同步':'已创建云端同步并上传本地数据')}catch(e){updateSyncUI('error');var msg=e.message||String(e);if(e.status===401)msg='Token 无效或已过期';else if(e.status===403)msg='Token 没有 gist 权限，或 GitHub API 限流';status('同步失败：'+msg);console.error('sync:',e)}finally{_syncing=false}}
+async function doSync(){if(!S.sy.t){updateSyncUI();return}if(_syncing)return;_syncing=true;updateSyncUI('syncing');try{var gid=S.sy.g||null;if(!gid){var found=await findSyncGist();if(found)gid=found.id}if(!gid){var created=await createSyncGist();gid=created.id}S.sy.g=gid;persistSy();var remote=null;try{remote=await readRemote(gid)}catch(e){if(e.status===404){S.sy.g='';persistSy();gid=null;var f2=await findSyncGist();if(f2)gid=f2.id;if(!gid){var c2=await createSyncGist();gid=c2.id}S.sy.g=gid;persistSy();remote=await readRemote(gid)}else throw e}var hasRemote=!!(remote&&(remote.settings||remote.theme||Array.isArray(remote.conversations)||remote.deletedConversations));if(hasRemote){applyRemote(remote);applyRemoteTheme(remote)}if(!S.sy.ta){S.sy.ta='1970-01-01T00:00:00.000Z';persistSy()}var cd=cleanD(S.sy.d||{});S.sy.d=cd;persistSy();await ghAPI('gists/'+gid,'PATCH',{files:{'sync.json':{content:JSON.stringify({app:'ai-chat-lite',settings:clone(S.s),settingsUpdatedAt:S.sy.sa||new Date().toISOString(),theme:localStorage.getItem(K.t)||theme,themeUpdatedAt:S.sy.ta,conversations:read(K.c,[]),deletedConversations:cd,ts:new Date().toISOString()})}}});updateSyncUI('ok');status(hasRemote?'已同步':'已创建云端同步并上传本地数据')}catch(e){updateSyncUI('error');var msg=e.message||String(e);if(e.status===401)msg='Token 无效或已过期';else if(e.status===403)msg='Token 没有 gist 权限，或 GitHub API 限流';status('同步失败：'+msg);console.error('sync:',e)}finally{_syncing=false}}
 async function ghAPI(path,method,body){var headers={Authorization:'Bearer '+S.sy.t,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};if(body)headers['Content-Type']='application/json';var opts={method:method||'GET',headers:headers};if(body)opts.body=JSON.stringify(body);var r=await fetch('https://api.github.com/'+path,opts),txt=await r.text(),data=null;if(txt){try{data=JSON.parse(txt)}catch(e){data=txt}}if(!r.ok){var err=new Error(data&&data.message?data.message:txt||('HTTP '+r.status));err.status=r.status;err.data=data;throw err}return data}
 </script>
 </body>
