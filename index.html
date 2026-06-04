@@ -110,8 +110,7 @@ return {
     }
   },
   dualMode:{
-    enabled:false,
-    think:"think"
+    enabled:false
   }
 }
 }
@@ -133,7 +132,7 @@ return {
 function normalizeProfileConfig(cfg){
 if(!cfg||typeof cfg!=='object')cfg=profileTemplate();
 var ps=cfg.profiles&&typeof cfg.profiles==='object'&&!Array.isArray(cfg.profiles)?cfg.profiles:{};
-var out={active:String(cfg.active||'default'),profiles:{},dualMode:{enabled:false,think:null}};
+var out={active:String(cfg.active||'default'),profiles:{},dualMode:{enabled:false}};
 Object.keys(ps).forEach(function(k){
 out.profiles[k]=normalizeOneProfile(ps[k])
 });
@@ -141,9 +140,14 @@ if(!Object.keys(out.profiles).length)out.profiles.default=normalizeOneProfile(pr
 if(!out.profiles[out.active])out.active=Object.keys(out.profiles)[0];
 
 var dm=cfg.dualMode&&typeof cfg.dualMode==='object'?cfg.dualMode:{};
+
+/*
+  双模型模式已固定使用 profiles.think 作为思考模型配置。
+  因此配置中不再需要 dualMode.think。
+  旧配置里的 dualMode.think 会被忽略。
+*/
 out.dualMode={
-  enabled:!!dm.enabled,
-  think:dm.think&&out.profiles[dm.think]?dm.think:null
+  enabled:!!dm.enabled
 };
 return out
 }
@@ -199,8 +203,11 @@ return S.pf.profiles[k]||{}
 
 function getThinkConfig(){
 if(!S.pf||!S.pf.profiles)S.pf=migrateProfiles(read(K.s,null),S.s);
-var dm=S.pf.dualMode||{};
-var p=dm.think&&S.pf.profiles[dm.think]?S.pf.profiles[dm.think]:null;
+
+/*
+  思考模型固定使用 profiles.think。
+*/
+var p=S.pf.profiles&&S.pf.profiles.think?S.pf.profiles.think:null;
 var ap=getActiveProfile();
 p=p||{};
 return {
@@ -218,7 +225,7 @@ return {
 }
 
 function isDualMode(){
-return !!(S.pf&&S.pf.dualMode&&S.pf.dualMode.enabled&&S.pf.dualMode.think&&S.pf.profiles&&S.pf.profiles[S.pf.dualMode.think])
+return !!(S.pf&&S.pf.dualMode&&S.pf.dualMode.enabled&&S.pf.profiles&&S.pf.profiles.think)
 }
 
 function syncLegacyFromProfile(){
@@ -277,11 +284,12 @@ if(p.extraBody!=null&&(typeof p.extraBody!=='object'||Array.isArray(p.extraBody)
 });
 var active=obj.active&&obj.profiles[obj.active]?obj.active:keys[0];
 if(!String(obj.profiles[active].apiKey||'').trim())throw new Error('当前激活配置 profiles.'+active+' 缺少 apiKey');
+
 if(obj.dualMode&&obj.dualMode.enabled){
-if(!obj.dualMode.think)throw new Error('dualMode.enabled=true 时必须填写 dualMode.think');
-if(!obj.profiles[obj.dualMode.think])throw new Error('dualMode.think 必须引用 profiles 中存在的 key');
-if(!String(obj.profiles[obj.dualMode.think].apiKey||'').trim())throw new Error('思考模型 profiles.'+obj.dualMode.think+' 缺少 apiKey');
+if(!obj.profiles.think)throw new Error('dualMode.enabled=true 时必须存在 profiles.think');
+if(!String(obj.profiles.think.apiKey||'').trim())throw new Error('思考模型 profiles.think 缺少 apiKey');
 }
+
 return normalizeProfileConfig(obj)
 }
 
