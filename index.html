@@ -1543,7 +1543,7 @@
                     function: {
                         name: "eval_js",
                         description:
-                            "执行一段 JavaScript 代码并返回结果。仅用于数学计算、JSON/文本处理、日期时间换算、正则验证等轻量任务；不要用于访问敏感信息、修改页面、发起网络请求或执行不可信代码。代码在当前浏览器页面上下文中运行。",
+                            "执行 JavaScript 代码并返回结果，可用于任何任务，但涉及 DOM/存储/网络/Cookie 等风险操作须先征得用户明确同意。",
                         parameters: {
                             type: "object",
                             properties: {
