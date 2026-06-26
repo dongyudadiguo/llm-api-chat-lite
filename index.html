@@ -1326,10 +1326,11 @@
                 el.dataset.monaco = "done";
                 pre.style.display = "none";
                 var ediv = document.createElement("div");
-                var h = Math.min(text.split("\n").length * 18 + 16, 400);
+                var fullHeight = text.split("\n").length * 18 + 16;
+                var h = Math.min(fullHeight, 400);
                 ediv.style.height = h + "px";
                 el.appendChild(ediv);
-                if (h > 400) {
+                if (fullHeight > 400) {
                     var f = document.createElement("div");
                     f.className = "monaco-fade";
                     el.appendChild(f);
@@ -1354,14 +1355,6 @@
                 }
             }
             function safeInitMonaco(scope) {
-                // 消息代码块默认使用轻量 <pre> 渲染，避免长对话反复创建/销毁 Monaco 导致卡顿。
-                // 设置页仍会在 openSettings() 中按需使用 Monaco，加载失败时自动回退到 textarea。
-                if (
-                    !scope ||
-                    scope.closest?.("#messages") ||
-                    (typeof U !== "undefined" && scope === U.msgs)
-                )
-                    return;
                 if (!monacoReady) return;
                 var sel = ".cb:not([data-monaco])";
                 var els = scope
@@ -1392,8 +1385,9 @@
                 });
             }
             function forceInitMonaco(container) {
-                // 回复结束后也保持轻量代码块，不自动升级为 Monaco。
-                return;
+                if (!container || container.classList?.contains("pending"))
+                    return;
+                safeInitMonaco(container);
             }
             function renderMd(src) {
                 var raw = String(src || "")
