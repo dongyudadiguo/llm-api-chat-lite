@@ -914,7 +914,11 @@
                 padding: 1px 4px;
                 border-radius: 3px;
                 font-family: var(--m);
-                font-size: 12px;
+                font-size: 11px;
+            }
+            #pErr:not(:empty) {
+                margin-top: 4px;
+                min-height: 18px;
             }
             .ti,
             .ta {
@@ -1095,14 +1099,12 @@
                     <div
                         id="pErr"
                         style="
-                            margin-top: 8px;
                             font-size: 13px;
                             color: var(--d);
                             white-space: pre-wrap;
-                            min-height: 20px;
                         "
                     ></div>
-                    <div class="hint" style="margin-top: 8px">
+                    <div class="hint" style="margin-top: 4px">
                         当前为 profiles JSON 配置：在
                         <code>profiles.default</code> 等配置项中填写
                         <code>baseUrl</code
