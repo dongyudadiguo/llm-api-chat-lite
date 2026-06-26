@@ -564,6 +564,69 @@
             .comp textarea::placeholder {
                 color: var(--t3);
             }
+            .comp .img-previews {
+                display: flex;
+                gap: 6px;
+                padding: 0 12px 6px;
+                flex-wrap: wrap;
+            }
+            .comp .img-pv {
+                position: relative;
+                width: 56px;
+                height: 56px;
+                border-radius: 6px;
+                overflow: hidden;
+                border: 1px solid var(--b);
+                flex-shrink: 0;
+            }
+            .comp .img-pv img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+            .comp .img-pv .img-rm {
+                position: absolute;
+                top: 2px;
+                right: 2px;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: rgba(0, 0, 0, 0.6);
+                color: #fff;
+                font-size: 10px;
+                display: grid;
+                place-items: center;
+                cursor: pointer;
+                line-height: 1;
+            }
+            .msg-bd .msg-imgs {
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+                margin-bottom: 8px;
+            }
+            .msg-bd .msg-img {
+                max-width: 200px;
+                max-height: 200px;
+                border-radius: 8px;
+                border: 1px solid var(--b);
+                cursor: pointer;
+                object-fit: contain;
+            }
+            .btn-img {
+                padding: 4px 8px;
+                border-radius: 5px;
+                font-size: 16px;
+                color: var(--t3);
+                cursor: pointer;
+            }
+            .btn-img:hover {
+                color: var(--t);
+                background: var(--s2);
+            }
+            #imgInput {
+                display: none;
+            }
             .c-bar {
                 display: flex;
                 align-items: center;
@@ -975,6 +1038,7 @@
         <div class="pill" id="status">就绪</div>
         <div class="msgs" id="messages"></div>
         <form class="comp" id="form" autocomplete="off">
+            <div class="img-previews" id="imgPreviews"></div>
             <textarea
                 id="prompt"
                 rows="1"
@@ -984,7 +1048,18 @@
                 <div class="c-info">
                     <span class="tag" id="mInfo">未配置</span>
                 </div>
-                <button class="btn-s" id="sendBtn">发送</button>
+                <div style="display: flex; gap: 4px; align-items: center">
+                    <input type="file" id="imgInput" multiple />
+                    <button
+                        class="btn-img"
+                        id="imgBtn"
+                        type="button"
+                        title="添加图片"
+                    >
+                        🖼
+                    </button>
+                    <button class="btn-s" id="sendBtn">发送</button>
+                </div>
             </div>
         </form>
         <div class="mm off" id="mask">
@@ -1594,6 +1669,220 @@
                     a.remove();
                 });
             };
+            function compressImage(file, maxSize) {
+                maxSize = maxSize || 512 * 1024;
+                return new Promise(function (resolve, reject) {
+                    if (file.size <= maxSize)
+                        return resolve({
+                            dataUrl: URL.createObjectURL(file),
+                            base64: null,
+                            raw: file,
+                        });
+                    var reader = new FileReader();
+                    reader.onload = function () {
+                        var img = new Image();
+                        img.onload = function () {
+                            var canvas = document.createElement("canvas");
+                            var w = img.width,
+                                h = img.height;
+                            var maxDim = 1024;
+                            if (w > maxDim || h > maxDim) {
+                                var ratio = Math.min(maxDim / w, maxDim / h);
+                                w = Math.round(w * ratio);
+                                h = Math.round(h * ratio);
+                            }
+                            canvas.width = w;
+                            canvas.height = h;
+                            var ctx = canvas.getContext("2d");
+                            ctx.drawImage(img, 0, 0, w, h);
+                            var quality = 0.8;
+                            var dataUrl = canvas.toDataURL(
+                                "image/jpeg",
+                                quality,
+                            );
+                            while (
+                                dataUrl.length > maxSize * 1.37 &&
+                                quality > 0.15
+                            ) {
+                                quality -= 0.1;
+                                dataUrl = canvas.toDataURL(
+                                    "image/jpeg",
+                                    quality,
+                                );
+                            }
+                            resolve({
+                                dataUrl: dataUrl,
+                                base64: dataUrl,
+                                raw: null,
+                            });
+                        };
+                        img.onerror = function () {
+                            return reject(new Error("图片加载失败"));
+                        };
+                        img.src = reader.result;
+                    };
+                    reader.onerror = function () {
+                        return reject(new Error("文件读取失败"));
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+            function addFiles(files) {
+                var TEXT_EXTS = [
+                    "txt",
+                    "md",
+                    "json",
+                    "js",
+                    "ts",
+                    "py",
+                    "rb",
+                    "rs",
+                    "go",
+                    "java",
+                    "c",
+                    "cpp",
+                    "h",
+                    "hpp",
+                    "cs",
+                    "swift",
+                    "kt",
+                    "php",
+                    "sh",
+                    "bash",
+                    "zsh",
+                    "yml",
+                    "yaml",
+                    "xml",
+                    "html",
+                    "css",
+                    "scss",
+                    "less",
+                    "sql",
+                    "r",
+                    "lua",
+                    "pl",
+                    "toml",
+                    "ini",
+                    "cfg",
+                    "conf",
+                    "log",
+                    "csv",
+                    "tsv",
+                    "vue",
+                    "jsx",
+                    "tsx",
+                    "graphql",
+                    "dockerfile",
+                    "makefile",
+                    "cmake",
+                    "proto",
+                ];
+                var MAX_TEXT = 120 * 1024;
+                var promises = Array.prototype.slice
+                    .call(files)
+                    .map(function (f) {
+                        var ext = (f.name || "").split(".").pop().toLowerCase();
+                        if (f.type && f.type.startsWith("image/")) {
+                            return compressImage(f).then(function (r) {
+                                return {
+                                    kind: "image",
+                                    dataUrl: r.dataUrl,
+                                    base64: r.base64,
+                                    name: f.name,
+                                };
+                            });
+                        }
+                        if (
+                            TEXT_EXTS.indexOf(ext) !== -1 ||
+                            (f.type && f.type.startsWith("text/"))
+                        ) {
+                            if (f.size > MAX_TEXT)
+                                return Promise.resolve({
+                                    kind: "text",
+                                    name: f.name,
+                                    content:
+                                        "[文件过大，超过 " +
+                                        (MAX_TEXT / 1024).toFixed(0) +
+                                        "KB 限制]",
+                                });
+                            return new Promise(function (resolve) {
+                                var reader = new FileReader();
+                                reader.onload = function () {
+                                    resolve({
+                                        kind: "text",
+                                        name: f.name,
+                                        content: reader.result,
+                                    });
+                                };
+                                reader.onerror = function () {
+                                    resolve({
+                                        kind: "text",
+                                        name: f.name,
+                                        content: "[读取失败]",
+                                    });
+                                };
+                                reader.readAsText(f);
+                            });
+                        }
+                        return Promise.resolve({
+                            kind: "unsupported",
+                            name: f.name,
+                            content: "[不支持的文件类型]",
+                        });
+                    });
+                Promise.all(promises).then(function (results) {
+                    results.forEach(function (r) {
+                        if (r.kind === "image") {
+                            _pendingImages.push(r);
+                            if (_pendingImages.length > 6)
+                                _pendingImages = _pendingImages.slice(-6);
+                        } else if (r.kind === "text") {
+                            _pendingTexts.push(r);
+                        }
+                    });
+                    renderFilePreviews();
+                });
+            }
+            function removeFile(kind, idx) {
+                if (kind === "image") {
+                    var img = _pendingImages[idx];
+                    if (img && img.dataUrl && img.dataUrl.startsWith("blob:"))
+                        URL.revokeObjectURL(img.dataUrl);
+                    _pendingImages.splice(idx, 1);
+                } else if (kind === "text") {
+                    _pendingTexts.splice(idx, 1);
+                }
+                renderFilePreviews();
+            }
+            function renderFilePreviews() {
+                var el = $("#imgPreviews");
+                if (!el) return;
+                var parts = [];
+                _pendingImages.forEach(function (img, i) {
+                    parts.push(
+                        '<div class="img-pv"><img src="' +
+                            esc(img.dataUrl) +
+                            '" /><button class="img-rm" type="button" data-kind="image" data-idx="' +
+                            i +
+                            '">✕</button></div>',
+                    );
+                });
+                _pendingTexts.forEach(function (tf, i) {
+                    var label = esc(
+                        tf.name.length > 20
+                            ? tf.name.slice(0, 18) + "…"
+                            : tf.name,
+                    );
+                    parts.push(
+                        '<div class="img-pv" style="display:flex;align-items:center;justify-content:center;background:var(--s2);font-size:11px;color:var(--t3);word-break:break-all;text-align:center;padding:2px">' +
+                            label +
+                            '<button class="img-rm" type="button" data-kind="text" data-idx="' +
+                            i +
+                            '">✕</button></div>',
+                    );
+                });
+                el.innerHTML = parts.join("");
+            }
             var S = {
                 s: null,
                 c: [],
@@ -1613,7 +1902,9 @@
             var _streamEl = null,
                 _streamTimer = 0,
                 _streamContent = null,
-                _scrollRAF = 0;
+                _scrollRAF = 0,
+                _pendingImages = [],
+                _pendingTexts = [];
             var U = {
                 msgs: $("#messages"),
                 form: $("#form"),
@@ -1740,9 +2031,10 @@
                     toolUrl: x.toolUrl || null,
                     hidden: !!x.hidden,
                     dualSource: x.dualSource || null,
+                    images: Array.isArray(x.images) ? x.images : null,
                 };
             }
-            function mkMsg(role, content) {
+            function mkMsg(role, content, images) {
                 return {
                     id: "m_" + uid(),
                     role: role,
@@ -1756,6 +2048,8 @@
                     toolUrl: null,
                     hidden: false,
                     dualSource: null,
+                    images:
+                        Array.isArray(images) && images.length ? images : null,
                 };
             }
             function buildReqBody(opts) {
@@ -1872,6 +2166,7 @@
                                     if (m.hidden) o.hidden = true;
                                     if (m.dualSource)
                                         o.dualSource = m.dualSource;
+                                    if (m.images) o.images = m.images;
                                     return o;
                                 }),
                             createdAt: c.createdAt,
@@ -2095,6 +2390,58 @@
                         U.form.requestSubmit();
                     }
                 };
+                U.prompt.onpaste = function (e) {
+                    var items = e.clipboardData && e.clipboardData.items;
+                    if (!items) return;
+                    var files = [];
+                    for (var i = 0; i < items.length; i++) {
+                        if (items[i].type && items[i].type.startsWith("image/"))
+                            files.push(items[i].getAsFile());
+                    }
+                    if (files.length) {
+                        e.preventDefault();
+                        addFiles(files);
+                    }
+                };
+                U.form.addEventListener("click", function (e) {
+                    var rm = e.target.closest(".img-rm");
+                    if (rm && rm.dataset.idx != null) {
+                        removeFile(
+                            rm.dataset.kind || "image",
+                            parseInt(rm.dataset.idx),
+                        );
+                    }
+                });
+                U.form.addEventListener("dragover", function (e) {
+                    e.preventDefault();
+                });
+                U.form.addEventListener("drop", function (e) {
+                    e.preventDefault();
+                    if (e.dataTransfer && e.dataTransfer.files)
+                        addFiles(e.dataTransfer.files);
+                });
+                var imgInput = $("#imgInput");
+                var imgBtn = $("#imgBtn");
+                if (imgBtn)
+                    imgBtn.onclick = function () {
+                        if (imgInput) imgInput.click();
+                    };
+                if (imgInput)
+                    imgInput.onchange = function () {
+                        if (imgInput.files && imgInput.files.length)
+                            addFiles(imgInput.files);
+                        imgInput.value = "";
+                    };
+                U.msgs.addEventListener("click", function (e) {
+                    var rm = e.target.closest(".img-rm");
+                    if (rm && rm.dataset.idx != null) {
+                        removeFile(
+                            rm.dataset.kind || "image",
+                            parseInt(rm.dataset.idx),
+                        );
+                        return;
+                    }
+                });
                 U.themeBtn.onclick = function () {
                     theme = theme === "dark" ? "light" : "dark";
                     document.documentElement.dataset.theme = theme;
@@ -2126,6 +2473,9 @@
                     exp.clear();
                     ascroll = true;
                     sst = 0;
+                    _pendingImages = [];
+                    _pendingTexts = [];
+                    renderFilePreviews();
                     renderConv();
                     render();
                     refreshUI();
@@ -2411,7 +2761,18 @@
                             tool_call_id: m.toolCallId,
                             content: m.content,
                         });
-                    else out.push({ role: m.role, content: m.content });
+                    else if (m.role === "user" && m.images && m.images.length) {
+                        var parts = [];
+                        if (m.content && m.content.trim())
+                            parts.push({ type: "text", text: m.content });
+                        m.images.forEach(function (img) {
+                            parts.push({
+                                type: "image_url",
+                                image_url: { url: img.base64 || img.dataUrl },
+                            });
+                        });
+                        out.push({ role: "user", content: parts });
+                    } else out.push({ role: m.role, content: m.content });
                 });
                 return out;
             }
@@ -2450,7 +2811,28 @@
                 }
                 var c = aConv();
                 if (!c) return;
-                var user = mkMsg("user", text),
+                var userImgs = _pendingImages.length
+                    ? _pendingImages.map(function (img) {
+                          return { dataUrl: img.dataUrl, base64: img.base64 };
+                      })
+                    : null;
+                var textParts = _pendingTexts.map(function (tf) {
+                    return (
+                        "[文件: " +
+                        tf.name +
+                        "]\n```" +
+                        (tf.name.split(".").pop() || "") +
+                        "\n" +
+                        tf.content +
+                        "\n```"
+                    );
+                });
+                _pendingImages = [];
+                _pendingTexts = [];
+                renderFilePreviews();
+                if (textParts.length)
+                    text = textParts.join("\n\n") + "\n\n" + text;
+                var user = mkMsg("user", text, userImgs),
                     ai = Object.assign(mkMsg("assistant"), {
                         pending: true,
                         latency: null,
@@ -3529,7 +3911,20 @@
                     m.pending && !m.content
                         ? '<div class="typing"><span></span><span></span><span></span></div>'
                         : u
-                          ? "<p>" +
+                          ? (m.images && m.images.length
+                                ? '<div class="msg-imgs">' +
+                                  m.images
+                                      .map(function (img) {
+                                          return (
+                                              '<img class="msg-img" src="' +
+                                              esc(img.dataUrl || img.base64) +
+                                              '" />'
+                                          );
+                                      })
+                                      .join("") +
+                                  "</div>"
+                                : "") +
+                            "<p>" +
                             esc(m.content).replace(/\n/g, "<br>") +
                             "</p>"
                           : m.pending
@@ -4380,7 +4775,18 @@
                             tool_call_id: m.toolCallId,
                             content: m.content,
                         });
-                    else out.push({ role: m.role, content: m.content });
+                    else if (m.role === "user" && m.images && m.images.length) {
+                        var parts = [];
+                        if (m.content && m.content.trim())
+                            parts.push({ type: "text", text: m.content });
+                        m.images.forEach(function (img) {
+                            parts.push({
+                                type: "image_url",
+                                image_url: { url: img.base64 || img.dataUrl },
+                            });
+                        });
+                        out.push({ role: "user", content: parts });
+                    } else out.push({ role: m.role, content: m.content });
                 });
                 return out;
             }
