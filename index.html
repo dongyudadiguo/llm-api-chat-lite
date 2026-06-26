@@ -1100,7 +1100,12 @@
                         "
                     ></div>
                     <div class="hint" style="margin-top: 8px">
-                        当前配置支持：<code>baseUrl</code>、<code>apiKey</code>、<code>model</code>、<code>systemPrompt</code>、<code>temperature</code>、<code>headers</code>、<code>extraBody</code>、<code>dualMode</code>。
+                        当前为 profiles JSON 配置：在 profiles.default
+                        等配置项中填写 baseUrl、apiKey（可留空，适用于本地/免
+                        Key
+                        接口）、model、systemPrompt、temperature、headers、extraBody；通过顶层
+                        active 切换当前配置，dualMode.enabled 配合
+                        profiles.think 启用双模型。
                     </div>
                 </div>
                 <div class="mf">
@@ -1169,73 +1174,81 @@
                 theme = document.documentElement.dataset.theme,
                 monacoEditors = [],
                 monacoObserver = null;
-            require.config({
-                paths: {
-                    vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs",
-                },
-            });
-            require([
-                "vs/editor/editor.main",
-                "vs/basic-languages/monaco.contribution",
-                "vs/language/json/monaco.contribution",
-            ], function () {
-                monaco.editor.defineTheme("chat-dark", {
-                    base: "vs-dark",
-                    inherit: true,
-                    rules: [
-                        {
-                            token: "comment",
-                            foreground: "6b7280",
-                            fontStyle: "italic",
-                        },
-                        { token: "keyword", foreground: "c084fc" },
-                        { token: "number", foreground: "fbbf24" },
-                        { token: "string", foreground: "86efac" },
-                        { token: "type", foreground: "60a5fa" },
-                        { token: "delimiter", foreground: "94a3b8" },
-                        { token: "operator", foreground: "94a3b8" },
-                        { token: "string.key.json", foreground: "93c5fd" },
-                        { token: "string.value.json", foreground: "86efac" },
-                        { token: "number.json", foreground: "fbbf24" },
-                        { token: "keyword.json", foreground: "c084fc" },
-                    ],
-                    colors: {
-                        "editor.background": "#09090b",
-                        "editorGutter.background": "#09090b",
-                        "editor.lineHighlightBackground": "#09090b",
-                        "editor.selectionBackground": "#264f7833",
+            if (window.require && typeof require.config === "function") {
+                require.config({
+                    paths: {
+                        vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs",
                     },
                 });
-                monaco.editor.defineTheme("chat-light", {
-                    base: "vs",
-                    inherit: true,
-                    rules: [
-                        {
-                            token: "comment",
-                            foreground: "6b7280",
-                            fontStyle: "italic",
+                require([
+                    "vs/editor/editor.main",
+                    "vs/basic-languages/monaco.contribution",
+                    "vs/language/json/monaco.contribution",
+                ], function () {
+                    monaco.editor.defineTheme("chat-dark", {
+                        base: "vs-dark",
+                        inherit: true,
+                        rules: [
+                            {
+                                token: "comment",
+                                foreground: "6b7280",
+                                fontStyle: "italic",
+                            },
+                            { token: "keyword", foreground: "c084fc" },
+                            { token: "number", foreground: "fbbf24" },
+                            { token: "string", foreground: "86efac" },
+                            { token: "type", foreground: "60a5fa" },
+                            { token: "delimiter", foreground: "94a3b8" },
+                            { token: "operator", foreground: "94a3b8" },
+                            { token: "string.key.json", foreground: "93c5fd" },
+                            {
+                                token: "string.value.json",
+                                foreground: "86efac",
+                            },
+                            { token: "number.json", foreground: "fbbf24" },
+                            { token: "keyword.json", foreground: "c084fc" },
+                        ],
+                        colors: {
+                            "editor.background": "#09090b",
+                            "editorGutter.background": "#09090b",
+                            "editor.lineHighlightBackground": "#09090b",
+                            "editor.selectionBackground": "#264f7833",
                         },
-                        { token: "keyword", foreground: "7c3aed" },
-                        { token: "number", foreground: "b45309" },
-                        { token: "string", foreground: "15803d" },
-                        { token: "type", foreground: "2563eb" },
-                        { token: "delimiter", foreground: "64748b" },
-                        { token: "operator", foreground: "64748b" },
-                        { token: "string.key.json", foreground: "2563eb" },
-                        { token: "string.value.json", foreground: "15803d" },
-                        { token: "number.json", foreground: "b45309" },
-                        { token: "keyword.json", foreground: "7c3aed" },
-                    ],
-                    colors: {
-                        "editor.background": "#f4f4f6",
-                        "editorGutter.background": "#f4f4f6",
-                        "editor.lineHighlightBackground": "#eeeef0",
-                        "editor.selectionBackground": "#b6d6fb44",
-                    },
+                    });
+                    monaco.editor.defineTheme("chat-light", {
+                        base: "vs",
+                        inherit: true,
+                        rules: [
+                            {
+                                token: "comment",
+                                foreground: "6b7280",
+                                fontStyle: "italic",
+                            },
+                            { token: "keyword", foreground: "7c3aed" },
+                            { token: "number", foreground: "b45309" },
+                            { token: "string", foreground: "15803d" },
+                            { token: "type", foreground: "2563eb" },
+                            { token: "delimiter", foreground: "64748b" },
+                            { token: "operator", foreground: "64748b" },
+                            { token: "string.key.json", foreground: "2563eb" },
+                            {
+                                token: "string.value.json",
+                                foreground: "15803d",
+                            },
+                            { token: "number.json", foreground: "b45309" },
+                            { token: "keyword.json", foreground: "7c3aed" },
+                        ],
+                        colors: {
+                            "editor.background": "#f4f4f6",
+                            "editorGutter.background": "#f4f4f6",
+                            "editor.lineHighlightBackground": "#eeeef0",
+                            "editor.selectionBackground": "#b6d6fb44",
+                        },
+                    });
+                    monacoReady = true;
+                    safeInitMonaco();
                 });
-                monacoReady = true;
-                safeInitMonaco();
-            });
+            }
             var MOPTS = {
                 readOnly: true,
                 domReadOnly: true,
@@ -1335,6 +1348,14 @@
                 }
             }
             function safeInitMonaco(scope) {
+                // 消息代码块默认使用轻量 <pre> 渲染，避免长对话反复创建/销毁 Monaco 导致卡顿。
+                // 设置页仍会在 openSettings() 中按需使用 Monaco，加载失败时自动回退到 textarea。
+                if (
+                    !scope ||
+                    scope.closest?.("#messages") ||
+                    (typeof U !== "undefined" && scope === U.msgs)
+                )
+                    return;
                 if (!monacoReady) return;
                 var sel = ".cb:not([data-monaco])";
                 var els = scope
@@ -1365,10 +1386,8 @@
                 });
             }
             function forceInitMonaco(container) {
-                if (!monacoReady || !container) return;
-                container
-                    .querySelectorAll(".cb:not([data-monaco])")
-                    .forEach(initMonacoForEl);
+                // 回复结束后也保持轻量代码块，不自动升级为 Monaco。
+                return;
             }
             function renderMd(src) {
                 var raw = String(src || "")
@@ -1669,15 +1688,32 @@
                     a.remove();
                 });
             };
+            function readFileAsDataURL(file) {
+                return new Promise(function (resolve, reject) {
+                    var reader = new FileReader();
+                    reader.onload = function () {
+                        resolve(reader.result);
+                    };
+                    reader.onerror = function () {
+                        reject(new Error("文件读取失败"));
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
             function compressImage(file, maxSize) {
                 maxSize = maxSize || 512 * 1024;
                 return new Promise(function (resolve, reject) {
-                    if (file.size <= maxSize)
-                        return resolve({
-                            dataUrl: URL.createObjectURL(file),
-                            base64: null,
-                            raw: file,
-                        });
+                    if (file.size <= maxSize) {
+                        readFileAsDataURL(file)
+                            .then(function (dataUrl) {
+                                resolve({
+                                    dataUrl: dataUrl,
+                                    raw: null,
+                                });
+                            })
+                            .catch(reject);
+                        return;
+                    }
                     var reader = new FileReader();
                     reader.onload = function () {
                         var img = new Image();
@@ -1712,7 +1748,6 @@
                             }
                             resolve({
                                 dataUrl: dataUrl,
-                                base64: dataUrl,
                                 raw: null,
                             });
                         };
@@ -1787,7 +1822,6 @@
                                 return {
                                     kind: "image",
                                     dataUrl: r.dataUrl,
-                                    base64: r.base64,
                                     name: f.name,
                                 };
                             });
@@ -1978,8 +2012,7 @@
             render();
             refreshUI();
             safeInitMonaco();
-            if (!S.s.apiKey || !S.s.baseUrl || !S.s.model)
-                status("请先配置接口");
+            if (!S.s.baseUrl || !S.s.model) status("请先配置接口");
             U.sToken.value = S.sy.t || "";
             updateSyncUI();
             U.themeBtn.textContent = theme === "dark" ? "☀" : "☾";
@@ -2385,6 +2418,7 @@
                 U.form.onsubmit = submit;
                 U.prompt.oninput = resize;
                 U.prompt.onkeydown = function (e) {
+                    if (e.isComposing) return;
                     if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         U.form.requestSubmit();
@@ -2768,7 +2802,7 @@
                         m.images.forEach(function (img) {
                             parts.push({
                                 type: "image_url",
-                                image_url: { url: img.base64 || img.dataUrl },
+                                image_url: { url: img.dataUrl },
                             });
                         });
                         out.push({ role: "user", content: parts });
@@ -2793,8 +2827,9 @@
                     return;
                 }
                 var text = U.prompt.value.trim();
-                if (!text) return U.prompt.focus();
-                if (!S.s.baseUrl || !S.s.apiKey || !S.s.model) {
+                if (!text && !_pendingImages.length && !_pendingTexts.length)
+                    return U.prompt.focus();
+                if (!S.s.baseUrl || !S.s.model) {
                     status("请先配置接口");
                     return show("mask");
                 }
@@ -2804,7 +2839,7 @@
                         status("请填写思考模型名称");
                         return show("mask");
                     }
-                    if (!tc.url || !tc.key) {
+                    if (!tc.url) {
                         status("请先配置思考模型接口");
                         return show("mask");
                     }
@@ -2813,7 +2848,7 @@
                 if (!c) return;
                 var userImgs = _pendingImages.length
                     ? _pendingImages.map(function (img) {
-                          return { dataUrl: img.dataUrl, base64: img.base64 };
+                          return { dataUrl: img.dataUrl };
                       })
                     : null;
                 var textParts = _pendingTexts.map(function (tf) {
@@ -3721,7 +3756,7 @@
                 return done;
             }
             async function genTitle(c) {
-                if (!S.s.baseUrl || !S.s.apiKey) return;
+                if (!S.s.baseUrl || !S.s.model) return;
                 try {
                     var body = buildReqBody({
                         messages: [
@@ -3770,8 +3805,6 @@
                     _streamTimer = 0;
                 }
                 _streamEl = null;
-                disposeMonaco();
-
                 var c = aConv(),
                     msgs = c ? c.messages : [],
                     el = U.msgs;
@@ -3917,7 +3950,7 @@
                                       .map(function (img) {
                                           return (
                                               '<img class="msg-img" src="' +
-                                              esc(img.dataUrl || img.base64) +
+                                              esc(img.dataUrl) +
                                               '" />'
                                           );
                                       })
@@ -4003,7 +4036,7 @@
                             '<div class="typing"><span></span><span></span><span></span></div>';
                         return;
                     }
-                    bd.innerHTML = renderMd(_streamContent);
+                    bd.innerHTML = renderMdLite(_streamContent);
                     var last = bd.lastElementChild;
                     while (last && last.tagName === "HR")
                         last = last.previousElementSibling;
@@ -4681,18 +4714,12 @@
                     obj.active && obj.profiles[obj.active]
                         ? obj.active
                         : keys[0];
-                if (!String(obj.profiles[active].apiKey || "").trim())
-                    throw new Error(
-                        "当前激活配置 profiles." + active + " 缺少 apiKey",
-                    );
 
                 if (obj.dualMode && obj.dualMode.enabled) {
                     if (!obj.profiles.think)
                         throw new Error(
                             "dualMode.enabled=true 时必须存在 profiles.think",
                         );
-                    if (!String(obj.profiles.think.apiKey || "").trim())
-                        throw new Error("思考模型 profiles.think 缺少 apiKey");
                 }
 
                 return normalizeProfileConfig(obj);
@@ -4782,7 +4809,7 @@
                         m.images.forEach(function (img) {
                             parts.push({
                                 type: "image_url",
-                                image_url: { url: img.base64 || img.dataUrl },
+                                image_url: { url: img.dataUrl },
                             });
                         });
                         out.push({ role: "user", content: parts });
