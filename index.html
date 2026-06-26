@@ -626,5 +626,43 @@ installProfileSettingsUI();
 
 async function ghAPI(path,method,body){var headers={Authorization:'Bearer '+S.sy.t,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};if(body)headers['Content-Type']='application/json';var opts={method:method||'GET',headers:headers};if(body)opts.body=JSON.stringify(body);var r=await fetch('https://api.github.com/'+path,opts),txt=await r.text(),data=null;if(txt){try{data=JSON.parse(txt)}catch(e){data=txt}}if(!r.ok){var err=new Error(data&&data.message?data.message:txt||('HTTP '+r.status));err.status=r.status;err.data=data;throw err}return data}
 </script>
+<script>
+(function(){
+if(!window.U||!U.convList)return;
+function deleteConvDirect(id){
+if(!id)return;
+if(S.c.length<=1){status('至少保留一个对话');return}
+var i=S.c.findIndex(function(x){return x.id===id});
+if(i===-1)return;
+var title=S.c[i].title||'';
+S.sy.d[id]=new Date().toISOString();
+persistSy();
+S.c.splice(i,1);
+if(id===S.ac)S.ac=(S.c[i]||S.c[i-1]||S.c[0])?.id;
+if(S.ctl)S.ctl.abort();
+S.ctl=null;
+persistConv();
+renderConv();
+render();
+refreshUI();
+safeInitMonaco();
+status('已删除「'+title+'」')
+}
+U.convList.addEventListener('mousedown',function(e){
+if(e.button!==1)return;
+var item=e.target.closest('.cnv');
+if(!item||!U.convList.contains(item))return;
+e.preventDefault()
+});
+U.convList.addEventListener('auxclick',function(e){
+if(e.button!==1)return;
+var item=e.target.closest('.cnv');
+if(!item||!U.convList.contains(item))return;
+e.preventDefault();
+e.stopPropagation();
+deleteConvDirect(item.dataset.id)
+})
+})();
+</script>
 </body>
 </html>
