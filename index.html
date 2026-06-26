@@ -149,6 +149,9 @@
             .cnv.on {
                 background: var(--act);
             }
+            .cnv.pv:not(.on) {
+                background: var(--s2);
+            }
             .cnv .tl {
                 font-size: 14px;
                 font-weight: 500;
@@ -1929,6 +1932,7 @@
                     { t: "", g: "", sa: "", ta: "", d: {} },
                     read(K.y, {}),
                 ),
+                pv: null,
             };
             if (!S.sy.d || typeof S.sy.d !== "object") S.sy.d = {};
             if (!S.sy.ta) S.sy.ta = "1970-01-01T00:00:00.000Z";
@@ -2232,6 +2236,12 @@
                     return x.id === S.ac;
                 });
             }
+            function vConv() {
+                var id = S.pv || S.ac;
+                return S.c.find(function (x) {
+                    return x.id === id;
+                });
+            }
             function langExt(l) {
                 var m = {
                     javascript: "js",
@@ -2291,6 +2301,7 @@
                 U.convList.innerHTML = S.c
                     .map(function (c) {
                         var on = c.id === S.ac,
+                            pv = c.id === S.pv,
                             n = c.messages.filter(function (x) {
                                 return !x.pending;
                             }).length,
@@ -2300,6 +2311,7 @@
                         return (
                             '<div class="cnv' +
                             (on ? " on" : "") +
+                            (pv ? " pv" : "") +
                             '" data-id="' +
                             c.id +
                             '"><div class="tl">' +
@@ -2363,7 +2375,7 @@
                     }
             }
             function updMsgDOM() {
-                var c = aConv();
+                var c = vConv();
                 if (!c) return;
                 c.messages.forEach(function (m) {
                     var el = document.querySelector(
@@ -2507,6 +2519,7 @@
                     if (S.ctl) S.ctl.abort();
                     S.ctl = null;
                     mkConv();
+                    S.pv = null;
                     exp.clear();
                     ascroll = true;
                     sst = 0;
@@ -2601,7 +2614,7 @@
                     }
                     var mc = e.target.closest("[data-copy-msg]");
                     if (mc) {
-                        var c = aConv(),
+                        var c = vConv(),
                             m =
                                 c &&
                                 c.messages.find(function (x) {
@@ -2626,7 +2639,7 @@
                                 80;
                         ascroll = at;
                         if (!at) sst = el.scrollTop;
-                        var c = aConv(),
+                        var c = vConv(),
                             empty =
                                 !c ||
                                 c.messages.every(function (x) {
@@ -2654,6 +2667,32 @@
                     U.newBtn.click();
                     U.sb.classList.remove("open");
                 };
+                U.convList.onmouseover = function (e) {
+                    var item = e.target.closest(".cnv");
+                    if (!item || !U.convList.contains(item)) return;
+                    if (item.dataset.id === S.pv) return;
+                    S.pv = item.dataset.id;
+                    exp.clear();
+                    ascroll = true;
+                    sst = 0;
+                    renderConv();
+                    render({ scroll: true });
+                    refreshUI();
+                    safeInitMonaco();
+                    U.form.classList.remove("off");
+                };
+                U.convList.onmouseleave = function () {
+                    if (!S.pv) return;
+                    S.pv = null;
+                    exp.clear();
+                    ascroll = true;
+                    sst = 0;
+                    renderConv();
+                    render({ scroll: true });
+                    refreshUI();
+                    safeInitMonaco();
+                    U.form.classList.remove("off");
+                };
                 U.convList.onclick = function (e) {
                     var item = e.target.closest(".cnv");
                     if (!item) return;
@@ -2673,11 +2712,12 @@
                         S.c.splice(i, 1);
                         if (id === S.ac)
                             S.ac = (S.c[i] || S.c[i - 1] || S.c[0])?.id;
+                        if (id === S.pv) S.pv = null;
                         if (S.ctl) S.ctl.abort();
                         S.ctl = null;
                         persistConv();
                         renderConv();
-                        render();
+                        render({ scroll: true });
                         refreshUI();
                         safeInitMonaco();
                         return;
@@ -2727,6 +2767,7 @@
                     if (S.ctl) S.ctl.abort();
                     S.ctl = null;
                     S.ac = item.dataset.id;
+                    S.pv = null;
                     exp.clear();
                     ascroll = true;
                     sst = 0;
@@ -3808,7 +3849,7 @@
                     _streamTimer = 0;
                 }
                 _streamEl = null;
-                var c = aConv(),
+                var c = vConv(),
                     msgs = c ? c.messages : [],
                     el = U.msgs;
                 var prevH = el.scrollHeight,
