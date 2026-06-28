@@ -1621,7 +1621,7 @@
                     function: {
                         name: "eval_js",
                         description:
-                            "执行 JavaScript 代码并返回结果，可用于任何任务。运行环境提供 fetch，外部 HTTP/HTTPS GET 请求会通过内部代理处理以避免 CORS；涉及 DOM/存储/网络/Cookie 等风险操作须先征得用户明确同意。",
+                            "执行 JavaScript 代码并返回结果，可用于任何任务。运行环境提供 fetch，外部 HTTP/HTTPS 请求会通过内部代理处理以避免 CORS，并支持 method、headers、body、状态码、响应头和二进制响应；涉及 DOM/存储/网络/Cookie 等风险操作须先征得用户明确同意。",
                         parameters: {
                             type: "object",
                             properties: {
@@ -3178,6 +3178,24 @@
                     };
                 });
                 var nativeFetch = window.fetch.bind(window);
+                function arrayBufferToBase64(buffer) {
+                    var bytes = new Uint8Array(buffer);
+                    var binary = "";
+                    var chunkSize = 0x8000;
+                    for (var i = 0; i < bytes.length; i += chunkSize) {
+                        var chunk = bytes.subarray(i, i + chunkSize);
+                        binary += String.fromCharCode.apply(null, chunk);
+                    }
+                    return btoa(binary);
+                }
+                function base64ToUint8Array(base64) {
+                    var binary = atob(base64 || "");
+                    var bytes = new Uint8Array(binary.length);
+                    for (var i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i);
+                    }
+                    return bytes;
+                }
                 var corsProxyFetch = async function (input, options) {
                     options = options || {};
                     var rawUrl =
@@ -3190,25 +3208,79 @@
                     var targetUrl = new URL(rawUrl, location.href);
                     if (targetUrl.origin === location.origin)
                         return nativeFetch(input, options);
-                    var method = (
-                        options.method ||
-                        (input && input.method) ||
-                        "GET"
-                    ).toUpperCase();
-                    if (method !== "GET")
-                        throw new Error("代理 fetch 仅支持 GET 请求");
-                    var r = await nativeFetch(
-                        "/api/fetch?url=" + encodeURIComponent(targetUrl.href),
-                        { signal: options.signal },
-                    );
-                    var j = await r.json();
-                    if (j.error) throw new Error(j.error);
-                    return new Response(j.content || "", {
-                        status: 200,
-                        headers: {
-                            "Content-Type": "text/plain; charset=utf-8",
-                        },
+                    var request =
+                        typeof Request !== "undefined" &&
+                        input instanceof Request
+                            ? new Request(input, options)
+                            : new Request(targetUrl.href, options);
+                    var hasBody = false;
+                    var bodyBase64 = "";
+                    if (
+                        request.method !== "GET" &&
+                        request.method !== "HEAD" &&
+                        request.body
+                    ) {
+                        hasBody = true;
+                        try {
+                            bodyBase64 = arrayBufferToBase64(
+                                await request.arrayBuffer(),
+                            );
+                        } catch (e) {
+                            throw new Error(
+                                "读取 fetch body 失败: " +
+                                    (e && e.message ? e.message : String(e)),
+                            );
+                        }
+                    }
+                    var r = await nativeFetch("/api/fetch", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            url: request.url,
+                            method: request.method,
+                            headers: Array.from(request.headers.entries()),
+                            hasBody: hasBody,
+                            bodyBase64: bodyBase64,
+                            redirect: request.redirect,
+                        }),
+                        signal: options.signal || request.signal,
                     });
+                    var j = await r.json().catch(function () {
+                        return null;
+                    });
+                    if (!r.ok || !j || j.error) {
+                        throw new Error(
+                            (j && j.error) ||
+                                "代理 fetch 请求失败: HTTP " + r.status,
+                        );
+                    }
+                    var statusCode = Number(j.status) || 200;
+                    var responseBody =
+                        j.nullBody ||
+                        statusCode === 204 ||
+                        statusCode === 205 ||
+                        statusCode === 304
+                            ? null
+                            : j.bodyBase64
+                              ? base64ToUint8Array(j.bodyBase64)
+                              : "";
+                    var response = new Response(responseBody, {
+                        status: statusCode,
+                        statusText: j.statusText || "",
+                        headers: j.headers || [],
+                    });
+                    try {
+                        Object.defineProperty(response, "url", {
+                            value: j.url || request.url,
+                        });
+                        Object.defineProperty(response, "redirected", {
+                            value: !!j.redirected,
+                        });
+                        Object.defineProperty(response, "type", {
+                            value: "cors",
+                        });
+                    } catch (e) {}
+                    return response;
                 };
                 try {
                     var AsyncFunction = Object.getPrototypeOf(
@@ -3221,8 +3293,8 @@
                     );
                     var timeout = new Promise(function (_, reject) {
                         setTimeout(function () {
-                            reject(new Error("执行超时（5s）"));
-                        }, 5000);
+                            reject(new Error("执行超时（20s）"));
+                        }, 20000);
                     });
                     var value = await Promise.race([
                         fn(toolConsole, corsProxyFetch),
