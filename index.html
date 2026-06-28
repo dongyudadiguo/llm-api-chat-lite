@@ -436,6 +436,27 @@
                 background: none !important;
                 border: none !important;
             }
+            .tool-detail {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .tool-title {
+                color: var(--t2);
+                font-weight: 600;
+            }
+            .tool-label {
+                color: var(--t3);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .tool-detail .cb {
+                margin: 0 0 4px;
+                border: 1px solid var(--b);
+                border-radius: var(--r);
+                background: var(--s);
+                overflow: hidden;
+            }
             .msg-hide {
                 font-size: 12px;
                 color: var(--t3);
@@ -1458,6 +1479,27 @@
                 );
                 return "<p>" + escaped + "</p>";
             }
+            function codeBlockH(lang, text) {
+                var l = /^[a-zA-Z0-9_+#.\-]{1,24}$/.test(lang || "")
+                    ? lang
+                    : "";
+                return (
+                    '<div class="cb' +
+                    (l ? "" : " nolang") +
+                    '" data-lang="' +
+                    esc(l) +
+                    '"><span class="cb-tools"><span class="cb-lang">' +
+                    esc(l) +
+                    '</span><button class="cb-cp">复制</button><button class="cb-dl">下载</button></span><pre><code>' +
+                    esc(
+                        String(text == null ? "" : text).replace(
+                            /^\n+|\n+$/g,
+                            "",
+                        ),
+                    ) +
+                    "</code></pre></div>"
+                );
+            }
             function bldTbl(lines) {
                 var rows = lines.map(function (l) {
                     return l
@@ -1621,7 +1663,7 @@
                     function: {
                         name: "eval_js",
                         description:
-                            "执行 JavaScript 代码并返回结果，可用于任何任务。运行环境提供 fetch，外部 HTTP/HTTPS 请求会通过内部代理处理以避免 CORS，并支持 method、headers、body、状态码、响应头和二进制响应；涉及 DOM/存储/网络/Cookie 等风险操作须先征得用户明确同意。",
+                            "执行 JavaScript 代码并返回结果，可用于任何任务。运行环境提供 fetch，外部 HTTP/HTTPS 请求会通过内部代理处理以避免 CORS，并支持 method、headers、body、状态码、响应头和二进制响应；主动调用此工具, 但涉及 存储/网络/Cookie 等风险操作须先征得用户明确同意。",
                         parameters: {
                             type: "object",
                             properties: {
@@ -3332,10 +3374,12 @@
                     args = JSON.parse(t.function.arguments || "{}");
                 } catch (e) {}
                 if (name === "eval_js") {
-                    var er = await runEvalTool(args.code || "");
+                    var code = args.code == null ? "" : String(args.code);
+                    var er = await runEvalTool(code);
                     return {
                         id: t.id,
                         name: name,
+                        code: code,
                         content: er.content,
                         error: er.error,
                         label: "JavaScript",
@@ -3404,6 +3448,10 @@
                         sm.content = r.error
                             ? "❌ " + d + " 失败"
                             : "✅ 已执行 " + d;
+                        if (r.name === "eval_js") {
+                            sm.evalCode = r.code || "";
+                            sm.evalResult = r.content || "";
+                        }
                     }
                     tms.push(
                         Object.assign(mkMsg("tool", r.content.slice(0, 8000)), {
@@ -3945,12 +3993,28 @@
                 return '<div class="stack"><div class="empty"><h2>AI Chat Lite</h2><p>轻量、实用的 AI 对话工具。配置接口后即可开始。</p><div class="chips"><button class="chip" data-sug="帮我总结下面这段内容：">总结内容</button><button class="chip" data-sug="请解释这段代码：">解释代码</button><button class="chip" data-sug="帮我写一段产品介绍文案。">生成文案</button></div></div></div>';
             }
             function vMsg(m) {
-                if (m.role === "tool_status")
+                if (m.role === "tool_status") {
+                    if (
+                        !m.pending &&
+                        m.toolName === "eval_js" &&
+                        (m.evalCode || m.evalResult)
+                    ) {
+                        return (
+                            '<div class="msg"><div class="msg-bd tbd tool-detail"><div class="tool-title">' +
+                            esc(m.content) +
+                            '</div><div class="tool-label">代码</div>' +
+                            codeBlockH("javascript", m.evalCode || "") +
+                            '<div class="tool-label">返回</div>' +
+                            codeBlockH("plaintext", m.evalResult || "") +
+                            "</div></div>"
+                        );
+                    }
                     return (
                         '<div class="msg"><div class="msg-bd tbd">' +
                         esc(m.content) +
                         "</div></div>"
                     );
+                }
                 var u = m.role === "user",
                     out = m.hidden;
                 var cls =
