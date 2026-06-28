@@ -1465,20 +1465,6 @@
                 }
                 return out.join("") || "<p></p>";
             }
-            function renderMdLite(src) {
-                var escaped = esc(src);
-                escaped = escaped.replace(/\n/g, "<br>");
-                escaped = escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
-                escaped = escaped.replace(
-                    /\*\*([^*]+)\*\*/g,
-                    "<strong>$1</strong>",
-                );
-                escaped = escaped.replace(
-                    /(^|\W)\*([^*]+)\*(?=\W|$)/g,
-                    "$1<em>$2</em>",
-                );
-                return "<p>" + escaped + "</p>";
-            }
             function codeBlockH(lang, text) {
                 var l = /^[a-zA-Z0-9_+#.\-]{1,24}$/.test(lang || "")
                     ? lang
@@ -4110,9 +4096,7 @@
                             "<p>" +
                             esc(m.content).replace(/\n/g, "<br>") +
                             "</p>"
-                          : m.pending
-                            ? renderMdLite(m.content)
-                            : renderMd(m.content);
+                          : renderMd(m.content);
                 return (
                     '<div class="' +
                     cls +
@@ -4186,7 +4170,7 @@
                             '<div class="typing"><span></span><span></span><span></span></div>';
                         return;
                     }
-                    bd.innerHTML = renderMdLite(_streamContent);
+                    bd.innerHTML = renderMd(_streamContent);
                     var last = bd.lastElementChild;
                     while (last && last.tagName === "HR")
                         last = last.previousElementSibling;
