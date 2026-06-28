@@ -1619,27 +1619,9 @@
                 {
                     type: "function",
                     function: {
-                        name: "fetch_url",
-                        description:
-                            "获取网页内容。当用户询问需要联网获取的实时信息（如当前时间、新闻、最新版本、天气、股价等）时，必须使用此工具访问相关网站获取最新数据。",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                url: {
-                                    type: "string",
-                                    description: "要获取的网页URL",
-                                },
-                            },
-                            required: ["url"],
-                        },
-                    },
-                },
-                {
-                    type: "function",
-                    function: {
                         name: "eval_js",
                         description:
-                            "执行 JavaScript 代码并返回结果，可用于任何任务，但涉及 DOM/存储/网络/Cookie 等风险操作须先征得用户明确同意。",
+                            "执行 JavaScript 代码并返回结果，可用于任何任务。运行环境提供 fetch，外部 HTTP/HTTPS GET 请求会通过内部代理处理以避免 CORS；涉及 DOM/存储/网络/Cookie 等风险操作须先征得用户明确同意。",
                         parameters: {
                             type: "object",
                             properties: {
@@ -2064,7 +2046,6 @@
                     toolCalls: x.toolCalls || null,
                     toolCallId: x.toolCallId || null,
                     toolName: x.toolName || null,
-                    toolUrl: x.toolUrl || null,
                     hidden: !!x.hidden,
                     dualSource: x.dualSource || null,
                     images: Array.isArray(x.images) ? x.images : null,
@@ -2081,7 +2062,6 @@
                     toolCalls: null,
                     toolCallId: null,
                     toolName: null,
-                    toolUrl: null,
                     hidden: false,
                     dualSource: null,
                     images:
@@ -2198,7 +2178,6 @@
                                     if (m.toolCallId)
                                         o.toolCallId = m.toolCallId;
                                     if (m.toolName) o.toolName = m.toolName;
-                                    if (m.toolUrl) o.toolUrl = m.toolUrl;
                                     if (m.hidden) o.hidden = true;
                                     if (m.dualSource)
                                         o.dualSource = m.dualSource;
@@ -3198,12 +3177,46 @@
                         );
                     };
                 });
+                var nativeFetch = window.fetch.bind(window);
+                var corsProxyFetch = async function (input, options) {
+                    options = options || {};
+                    var rawUrl =
+                        typeof input === "string" || input instanceof URL
+                            ? String(input)
+                            : input && input.url
+                              ? input.url
+                              : "";
+                    if (!rawUrl) throw new Error("fetch url 不能为空");
+                    var targetUrl = new URL(rawUrl, location.href);
+                    if (targetUrl.origin === location.origin)
+                        return nativeFetch(input, options);
+                    var method = (
+                        options.method ||
+                        (input && input.method) ||
+                        "GET"
+                    ).toUpperCase();
+                    if (method !== "GET")
+                        throw new Error("代理 fetch 仅支持 GET 请求");
+                    var r = await nativeFetch(
+                        "/api/fetch?url=" + encodeURIComponent(targetUrl.href),
+                        { signal: options.signal },
+                    );
+                    var j = await r.json();
+                    if (j.error) throw new Error(j.error);
+                    return new Response(j.content || "", {
+                        status: 200,
+                        headers: {
+                            "Content-Type": "text/plain; charset=utf-8",
+                        },
+                    });
+                };
                 try {
                     var AsyncFunction = Object.getPrototypeOf(
                         async function () {},
                     ).constructor;
                     var fn = new AsyncFunction(
                         "console",
+                        "fetch",
                         '"use strict";\n' + code,
                     );
                     var timeout = new Promise(function (_, reject) {
@@ -3211,7 +3224,10 @@
                             reject(new Error("执行超时（5s）"));
                         }, 5000);
                     });
-                    var value = await Promise.race([fn(toolConsole), timeout]);
+                    var value = await Promise.race([
+                        fn(toolConsole, corsProxyFetch),
+                        timeout,
+                    ]);
                     var out = [];
                     if (logs.length) out.push("console:\n" + logs.join("\n"));
                     out.push("result:\n" + formatEvalValue(value));
@@ -3234,12 +3250,6 @@
             }
             function toolLabel(t) {
                 var name = t && t.function && t.function.name;
-                var args = {};
-                try {
-                    args = JSON.parse(t.function.arguments || "{}");
-                } catch (e) {}
-                if (name === "fetch_url")
-                    return extractDomain(args.url || "") || args.url || "网页";
                 if (name === "eval_js") return "JavaScript";
                 return name || "工具";
             }
@@ -3259,26 +3269,6 @@
                         label: "JavaScript",
                     };
                 }
-                if (name === "fetch_url") {
-                    var turl = args.url || "";
-                    var r = await fetch(
-                        "/api/fetch?url=" + encodeURIComponent(turl),
-                        {
-                            signal: S.ctl.signal,
-                        },
-                    );
-                    var j = await r.json();
-                    return {
-                        id: t.id,
-                        name: name,
-                        content: j.error
-                            ? "获取失败: " + j.error
-                            : j.content || "",
-                        error: !!j.error,
-                        url: turl,
-                        label: extractDomain(turl),
-                    };
-                }
                 return {
                     id: t.id,
                     name: name || "unknown",
@@ -3295,20 +3285,16 @@
                 for (var ti = 0; ti < tc.length; ti++) {
                     var label = toolLabel(tc[ti]);
                     var tname = tc[ti].function.name;
-                    var icon = tname === "eval_js" ? "⚙️" : "🔍";
-                    var action =
-                        tname === "eval_js" ? "正在执行 " : "正在读取 ";
                     sms.push(
                         Object.assign(
                             mkMsg(
                                 "tool_status",
-                                icon + " " + action + label + "...",
+                                "⚙️ 正在执行 " + label + "...",
                             ),
                             {
                                 pending: true,
                                 toolCallId: tc[ti].id,
                                 toolName: tname,
-                                toolUrl: label,
                             },
                         ),
                     );
@@ -3342,12 +3328,10 @@
                     if (sm) {
                         sm.pending = false;
                         sm.error = r.error;
-                        var d = r.label || extractDomain(r.url || "") || r.name;
+                        var d = r.label || r.name;
                         sm.content = r.error
                             ? "❌ " + d + " 失败"
-                            : r.name === "eval_js"
-                              ? "✅ 已执行 " + d
-                              : "✅ 已读取 " + d;
+                            : "✅ 已执行 " + d;
                     }
                     tms.push(
                         Object.assign(mkMsg("tool", r.content.slice(0, 8000)), {
@@ -3359,16 +3343,6 @@
                 idx = c.messages.indexOf(ai);
                 c.messages.splice(idx, 0, ...tms);
                 render({ scroll: true });
-            }
-            function extractDomain(u) {
-                try {
-                    var p = new URL(u);
-                    return (
-                        p.hostname + p.pathname.replace(/\/$/, "").slice(0, 40)
-                    );
-                } catch (e) {
-                    return u;
-                }
             }
             function extractTC(json) {
                 var c = json?.choices?.[0];
