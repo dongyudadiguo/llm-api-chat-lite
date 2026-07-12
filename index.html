@@ -2886,7 +2886,7 @@
                         status("请填写思考模型名称");
                         return show("mask");
                     }
-                    if (!tc.url) {
+                    if (!(tc.baseUrl || tc.url)) {
                         status("请先配置思考模型接口");
                         return show("mask");
                     }
@@ -3181,6 +3181,120 @@
                     return String(v);
                 }
             }
+
+            var nativeFetch =
+                window.__llmNativeFetch ||
+                (window.__llmNativeFetch = window.fetch.bind(window));
+            function arrayBufferToBase64(buffer) {
+                var bytes = new Uint8Array(buffer);
+                var binary = "";
+                var chunkSize = 0x8000;
+                for (var i = 0; i < bytes.length; i += chunkSize) {
+                    var chunk = bytes.subarray(i, i + chunkSize);
+                    binary += String.fromCharCode.apply(null, chunk);
+                }
+                return btoa(binary);
+            }
+            function base64ToUint8Array(base64) {
+                var binary = atob(base64 || "");
+                var bytes = new Uint8Array(binary.length);
+                for (var i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                return bytes;
+            }
+            async function corsProxyFetch(input, options) {
+                options = options || {};
+                var rawUrl =
+                    typeof input === "string" || input instanceof URL
+                        ? String(input)
+                        : input && input.url
+                          ? input.url
+                          : "";
+                if (!rawUrl) throw new Error("fetch url 不能为空");
+                var targetUrl = new URL(rawUrl, location.href);
+                // same-origin (including /api/fetch itself) bypasses proxy to avoid recursion
+                if (targetUrl.origin === location.origin)
+                    return nativeFetch(input, options);
+                var request =
+                    typeof Request !== "undefined" && input instanceof Request
+                        ? new Request(input, options)
+                        : new Request(targetUrl.href, options);
+                var hasBody = false;
+                var bodyBase64 = "";
+                if (
+                    request.method !== "GET" &&
+                    request.method !== "HEAD" &&
+                    request.body
+                ) {
+                    hasBody = true;
+                    try {
+                        bodyBase64 = arrayBufferToBase64(
+                            await request.arrayBuffer(),
+                        );
+                    } catch (e) {
+                        throw new Error(
+                            "读取 fetch body 失败: " +
+                                (e && e.message ? e.message : String(e)),
+                        );
+                    }
+                }
+                var r = await nativeFetch("/api/fetch", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        url: request.url,
+                        method: request.method,
+                        headers: Array.from(request.headers.entries()),
+                        hasBody: hasBody,
+                        bodyBase64: bodyBase64,
+                        redirect: request.redirect,
+                    }),
+                    signal: options.signal || request.signal,
+                });
+                var j = await r.json().catch(function () {
+                    return null;
+                });
+                if (!r.ok || !j || j.error) {
+                    throw new Error(
+                        (j && j.error) ||
+                            "代理 fetch 请求失败: HTTP " + r.status,
+                    );
+                }
+                var statusCode = Number(j.status) || 200;
+                var responseBody =
+                    j.nullBody ||
+                    statusCode === 204 ||
+                    statusCode === 205 ||
+                    statusCode === 304
+                        ? null
+                        : j.bodyBase64
+                          ? base64ToUint8Array(j.bodyBase64)
+                          : "";
+                var response = new Response(responseBody, {
+                    status: statusCode,
+                    statusText: j.statusText || "",
+                    headers: j.headers || [],
+                });
+                try {
+                    Object.defineProperty(response, "url", {
+                        value: j.url || request.url,
+                    });
+                    Object.defineProperty(response, "redirected", {
+                        value: !!j.redirected,
+                    });
+                    Object.defineProperty(response, "type", {
+                        value: "cors",
+                    });
+                } catch (e) {}
+                return response;
+            }
+            // Route cross-origin browser fetch (chat API / GitHub / tools) through CF proxy.
+            if (!window.__llmFetchPatched) {
+                window.__llmFetchPatched = true;
+                window.fetch = corsProxyFetch;
+            }
+
             async function runEvalTool(code) {
                 code = String(code || "");
                 if (!code.trim())
@@ -3205,111 +3319,6 @@
                         );
                     };
                 });
-                var nativeFetch = window.fetch.bind(window);
-                function arrayBufferToBase64(buffer) {
-                    var bytes = new Uint8Array(buffer);
-                    var binary = "";
-                    var chunkSize = 0x8000;
-                    for (var i = 0; i < bytes.length; i += chunkSize) {
-                        var chunk = bytes.subarray(i, i + chunkSize);
-                        binary += String.fromCharCode.apply(null, chunk);
-                    }
-                    return btoa(binary);
-                }
-                function base64ToUint8Array(base64) {
-                    var binary = atob(base64 || "");
-                    var bytes = new Uint8Array(binary.length);
-                    for (var i = 0; i < binary.length; i++) {
-                        bytes[i] = binary.charCodeAt(i);
-                    }
-                    return bytes;
-                }
-                var corsProxyFetch = async function (input, options) {
-                    options = options || {};
-                    var rawUrl =
-                        typeof input === "string" || input instanceof URL
-                            ? String(input)
-                            : input && input.url
-                              ? input.url
-                              : "";
-                    if (!rawUrl) throw new Error("fetch url 不能为空");
-                    var targetUrl = new URL(rawUrl, location.href);
-                    if (targetUrl.origin === location.origin)
-                        return nativeFetch(input, options);
-                    var request =
-                        typeof Request !== "undefined" &&
-                        input instanceof Request
-                            ? new Request(input, options)
-                            : new Request(targetUrl.href, options);
-                    var hasBody = false;
-                    var bodyBase64 = "";
-                    if (
-                        request.method !== "GET" &&
-                        request.method !== "HEAD" &&
-                        request.body
-                    ) {
-                        hasBody = true;
-                        try {
-                            bodyBase64 = arrayBufferToBase64(
-                                await request.arrayBuffer(),
-                            );
-                        } catch (e) {
-                            throw new Error(
-                                "读取 fetch body 失败: " +
-                                    (e && e.message ? e.message : String(e)),
-                            );
-                        }
-                    }
-                    var r = await nativeFetch("/api/fetch", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            url: request.url,
-                            method: request.method,
-                            headers: Array.from(request.headers.entries()),
-                            hasBody: hasBody,
-                            bodyBase64: bodyBase64,
-                            redirect: request.redirect,
-                        }),
-                        signal: options.signal || request.signal,
-                    });
-                    var j = await r.json().catch(function () {
-                        return null;
-                    });
-                    if (!r.ok || !j || j.error) {
-                        throw new Error(
-                            (j && j.error) ||
-                                "代理 fetch 请求失败: HTTP " + r.status,
-                        );
-                    }
-                    var statusCode = Number(j.status) || 200;
-                    var responseBody =
-                        j.nullBody ||
-                        statusCode === 204 ||
-                        statusCode === 205 ||
-                        statusCode === 304
-                            ? null
-                            : j.bodyBase64
-                              ? base64ToUint8Array(j.bodyBase64)
-                              : "";
-                    var response = new Response(responseBody, {
-                        status: statusCode,
-                        statusText: j.statusText || "",
-                        headers: j.headers || [],
-                    });
-                    try {
-                        Object.defineProperty(response, "url", {
-                            value: j.url || request.url,
-                        });
-                        Object.defineProperty(response, "redirected", {
-                            value: !!j.redirected,
-                        });
-                        Object.defineProperty(response, "type", {
-                            value: "cors",
-                        });
-                    } catch (e) {}
-                    return response;
-                };
                 try {
                     var AsyncFunction = Object.getPrototypeOf(
                         async function () {},
@@ -3501,7 +3510,7 @@
                 });
                 var fastUrl = ep();
                 var thinkBody = thinkBuildBody(msgs, true);
-                var thinkUrl = thinkBuildEP(tc.url);
+                var thinkUrl = thinkBuildEP(tc.baseUrl || tc.url);
                 var thinkOk = false;
                 for (var step = 0; step < maxSteps; step++) {
                     var fastDone = false,
@@ -4735,7 +4744,9 @@
                 p = p || {};
                 return {
                     baseUrl: p.baseUrl || ap.baseUrl || "",
+                    url: p.baseUrl || ap.baseUrl || "",
                     apiKey: p.apiKey || ap.apiKey || "",
+                    key: p.apiKey || ap.apiKey || "",
                     model: p.model || "",
                     systemPrompt: p.systemPrompt || ap.systemPrompt || "",
                     temperature:
@@ -4752,8 +4763,6 @@
                         p.noThinkBody && typeof p.noThinkBody === "object"
                             ? p.noThinkBody
                             : undefined,
-                    url: p.baseUrl || ap.baseUrl || "",
-                    key: p.apiKey || ap.apiKey || "",
                 };
             }
 

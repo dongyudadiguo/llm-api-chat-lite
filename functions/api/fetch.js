@@ -1,6 +1,6 @@
 const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
-const TIMEOUT_MS = 15000;
+const TIMEOUT_MS = 120000;
 const MAX_REDIRECTS = 20;
 
 const BASE_JSON_HEADERS = {
@@ -370,11 +370,22 @@ function createHttpError(message, status) {
 function isPrivateHost(hostname) {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/g, '');
   if (['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(h)) return true;
+  // cloud metadata / common internal aliases
+  if (
+    h === 'metadata' ||
+    h === 'metadata.google.internal' ||
+    h === 'instance-data' ||
+    h.endsWith('.metadata.google.internal')
+  ) return true;
   if (
     h.endsWith('.local') ||
     h.endsWith('.internal') ||
     h.endsWith('.localhost') ||
-    h.endsWith('.localdomain')
+    h.endsWith('.localdomain') ||
+    h.endsWith('.intranet') ||
+    h.endsWith('.corp') ||
+    h.endsWith('.home') ||
+    h.endsWith('.lan')
   ) return true;
 
   if (h.includes(':')) {
