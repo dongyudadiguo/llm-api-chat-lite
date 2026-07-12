@@ -1,0 +1,39 @@
+{
+  "url": "https://linkai.shop/v1/chat/completions",
+  "headers": {
+    "Authorization": "Bearer sk-8b97c239709a6c97e445a05a136ff52a5e5fbd9eff1a00626001f4f20306967f",
+    "Content-Type": "application/json"
+  },
+  "json": {
+    "model": "grok-4.5",
+    "reasoning_effect": "high",
+    "stream": false,
+    "messages": [
+      {
+        "role": "system",
+        "content": "Proactively use Python for any task; Keep the code for tool calls minimal, unless you are creating **reusable tools**; user run `./view.vbs` to view the content and call you"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "python",
+          "description": "Execute Python code",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          }
+        }
+      }
+    ],
+    "parallel_tool_calls": false
+  }
+}

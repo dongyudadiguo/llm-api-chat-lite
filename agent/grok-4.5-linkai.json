@@ -1,0 +1,9 @@
+{
+  "url": "https://linkai.shop/v1/chat/completions",
+  "headers": {
+    "Authorization": "Bearer sk-8b97c239709a6c97e445a05a136ff52a5e5fbd9eff1a00626001f4f20306967f",
+    "Content-Type": "application/json"
+  },
+  "model": "grok-4.5",
+  "reasoning_effect": "high"
+}
